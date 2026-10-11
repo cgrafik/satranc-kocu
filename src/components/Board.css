@@ -1,0 +1,149 @@
+/* chess.com "yeşil" tahta teması */
+.board {
+  --light: #ebecd0;
+  --dark: #739552;
+  --last: rgba(255, 255, 51, 0.48);
+  --dot: rgba(0, 0, 0, 0.16);
+  position: relative;
+  width: 100%;
+  aspect-ratio: 1 / 1;
+  user-select: none;
+  -webkit-user-select: none;
+  touch-action: none;
+  border-radius: 4px;
+  overflow: hidden;
+  cursor: pointer;
+  container-type: inline-size;
+}
+
+.sq {
+  position: absolute;
+  width: 12.5%;
+  height: 12.5%;
+}
+.sq.light { background: var(--light); }
+.sq.dark { background: var(--dark); }
+.sq.last::before,
+.sq.selected::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: var(--last);
+}
+.sq.hover::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  box-shadow: inset 0 0 0 4px rgba(255, 255, 255, 0.7);
+}
+.sq.check {
+  background-image: radial-gradient(circle, rgba(255, 0, 0, 0.95) 0%, rgba(231, 0, 0, 0.6) 30%, rgba(169, 0, 0, 0) 75%);
+}
+
+/* Anlamlı vurgular: kırmızı = tehlikedeki taşın, mavi = ipucu, yeşil = iyi kare, turuncu = rakip tehdidi */
+.sq.mark-danger { box-shadow: inset 0 0 0 100vmax rgba(220, 40, 40, 0.42); }
+.sq.mark-hint { box-shadow: inset 0 0 0 100vmax rgba(40, 110, 220, 0.45); }
+.sq.mark-good { box-shadow: inset 0 0 0 100vmax rgba(30, 150, 60, 0.45); }
+.sq.mark-threat { box-shadow: inset 0 0 0 100vmax rgba(230, 143, 0, 0.45); }
+
+.coord {
+  position: absolute;
+  font-size: max(9px, 2.2cqi);
+  font-weight: 700;
+  pointer-events: none;
+  line-height: 1;
+}
+.sq.light .coord { color: var(--dark); }
+.sq.dark .coord { color: var(--light); }
+.coord.rank { top: 3px; left: 3px; }
+.coord.file { bottom: 3px; right: 4px; }
+
+.target {
+  position: absolute;
+  z-index: 3;
+  pointer-events: none;
+}
+.target.dot {
+  width: 33%;
+  height: 33%;
+  left: 33.5%;
+  top: 33.5%;
+  border-radius: 50%;
+  background: var(--dot);
+}
+.target.capture {
+  inset: 0;
+  border-radius: 50%;
+  background: radial-gradient(transparent 0%, transparent 76%, var(--dot) 77%);
+}
+.user-circle {
+  position: absolute;
+  inset: 6%;
+  border-radius: 50%;
+  border: 0.55cqi solid rgba(255, 170, 0, 0.85);
+  z-index: 4;
+  pointer-events: none;
+}
+
+.piece {
+  position: absolute;
+  left: 0;
+  top: 0;
+  width: 12.5%;
+  height: 12.5%;
+  z-index: 2;
+  pointer-events: none;
+  will-change: transform;
+}
+.piece.anim { transition: transform 160ms ease-out; }
+.piece.ghost { opacity: 0.35; }
+.piece svg,
+.drag-piece svg,
+.promo-btn svg {
+  width: 100%;
+  height: 100%;
+  display: block;
+}
+
+.drag-piece {
+  position: fixed;
+  left: 0;
+  top: 0;
+  z-index: 50;
+  pointer-events: none;
+  cursor: grabbing;
+}
+
+.arrows {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  z-index: 5;
+  pointer-events: none;
+}
+
+.promo-overlay {
+  position: absolute;
+  inset: 0;
+  z-index: 20;
+  background: rgba(0, 0, 0, 0.35);
+}
+.promo-picker {
+  position: absolute;
+  width: 12.5%;
+  display: flex;
+  background: #fff;
+  border-radius: 4px;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.5);
+  overflow: hidden;
+}
+.promo-btn {
+  aspect-ratio: 1 / 1;
+  width: 100%;
+  border: 0;
+  padding: 0;
+  background: #f0f0f0;
+  cursor: pointer;
+}
+.promo-btn:hover { background: #ffe58a; }
