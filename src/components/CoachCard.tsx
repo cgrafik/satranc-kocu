@@ -1,6 +1,6 @@
 import { CLASS_INFO, type MoveReview } from '../lib/coach';
 
-/** Bir hamlenin koç değerlendirmesi: sınıf, alternatif, neden, rakibin cevabı, öncesi/sonrası karşılaştırma. */
+/** Bir hamlenin koç değerlendirmesi — notasyon yok, düz cümleler. */
 export default function CoachCard({
   review,
   compare,
@@ -14,6 +14,7 @@ export default function CoachCard({
 }) {
   const info = CLASS_INFO[review.cls];
   const bad = info.tone === 'bad' || info.tone === 'warn';
+  const showBetter = review.best && !review.isBest && review.cls !== 'best' && review.cls !== 'excellent';
   const showRefutation = review.refutation && (review.cls === 'mistake' || review.cls === 'blunder' || review.cls === 'inaccuracy');
   return (
     <section className={`card coach tone-${info.tone}`} aria-live="polite">
@@ -21,19 +22,17 @@ export default function CoachCard({
         <span className={`badge tone-${info.tone}`}>
           {info.short} {info.label}
         </span>
-        <span className="muted small">{review.evalText}</span>
       </header>
 
-      <dl className="coach-grid">
-        <dt>{mine ? 'Senin hamlen' : 'Oynanan hamle'}</dt>
-        <dd className="san">{review.trSan}</dd>
-        {review.best && !review.isBest && review.cls !== 'best' && (
-          <>
-            <dt>Daha iyi alternatif</dt>
-            <dd className="san good">{review.best.trSan}</dd>
-          </>
-        )}
-      </dl>
+      <p className="coach-played">
+        <span className="muted">{mine ? 'Senin hamlen:' : 'Oynanan hamle:'}</span> {mine ? review.playedText : review.playedText.replace(/n$/, '')}
+      </p>
+
+      {showBetter && (
+        <p className="coach-better">
+          <span className="muted">Bunun yerine:</span> <strong>{review.best!.text}</strong>
+        </p>
+      )}
 
       <div className="coach-why">
         <strong>Neden?</strong>
@@ -44,30 +43,26 @@ export default function CoachCard({
         </ul>
       </div>
 
-      {showRefutation && (
-        <div className="coach-refute">
-          <strong>Hata yaparsan ne olur?</strong>
-          <p>
-            Rakibin en güçlü cevabı: <span className="san bad">{review.refutation!.line[0]}</span>
-            {review.refutation!.line.length > 1 && (
-              <>
-                {' '}
-                → <span className="line">{review.refutation!.line.join(' ')}</span>
-              </>
-            )}
-          </p>
-        </div>
+      {showRefutation && review.refutation!.steps.length > 1 && (
+        <details className="coach-refute">
+          <summary>Sonra ne olur? (adım adım)</summary>
+          <ol>
+            {review.refutation!.steps.map((s, i) => (
+              <li key={i}>{s}</li>
+            ))}
+          </ol>
+        </details>
       )}
 
       <div className="seg" role="group" aria-label="Tahtada göster">
-        <span className="muted small">Tahtada göster:</span>
         <button className={compare === 'before' ? 'on' : ''} onClick={() => onCompare(compare === 'before' ? null : 'before')}>
-          Hamle öncesi{review.best && !review.isBest ? ' + daha iyisi' : ''}
+          {showBetter ? '🟩 Doğrusunu tahtada göster' : 'Hamleden önceki konum'}
         </button>
         <button className={compare === 'after' ? 'on' : ''} onClick={() => onCompare(compare === 'after' ? null : 'after')}>
-          Hamle sonrası{bad && review.refutation ? ' + rakibin cevabı' : ''}
+          {bad && review.refutation ? '🟥 Rakibin cevabını göster' : 'Hamleden sonraki konum'}
         </button>
       </div>
+      <p className="muted small">{review.evalText}</p>
     </section>
   );
 }

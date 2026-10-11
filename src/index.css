@@ -212,3 +212,26 @@ strong.tone-bad { color: var(--bad); }
 .theme-grid button.review { background: #5a3d1e; }
 button.small-primary { font-size: 0.95rem; padding: 8px 14px; box-shadow: 0 3px 0 var(--accent-dark); }
 @media (max-width: 420px) { .tabs button { padding: 7px 8px; font-size: 0.85rem; } }
+
+/* Düz anlatım kartları */
+.advice { border-left: 4px solid var(--good); }
+.advice-context { margin: 0 0 4px; color: var(--warn); font-weight: 600; }
+.advice-main { font-size: 1.08rem; font-weight: 700; margin: 4px 0 8px; }
+.coach-played, .coach-better { margin: 4px 0; }
+.coach-better strong { color: var(--good); }
+.coach-refute summary, .advice summary, details summary { cursor: pointer; color: var(--blue); }
+.last-opp { margin: 0; padding: 6px 10px; background: #3a2f1f; border-radius: 6px; font-size: 0.95rem; }
+.counter-prompt { margin: 0; padding: 8px 10px; border-radius: 6px; font-weight: 600; }
+.counter-prompt.mine { background: #2a3d22; }
+.counter-prompt.opp { background: #4a3a1c; }
+.plain-moves { margin: 8px 0 0; padding-left: 20px; }
+.plain-moves li.opp { color: #f3c98b; }
+.saved-list { list-style: none; padding: 0 !important; margin: 0; }
+.saved-list li { display: flex; justify-content: space-between; align-items: center; gap: 8px; padding: 8px 0; border-top: 1px solid #3a3835; }
+button.saved { background: #2f4a25; }
+.toast { position: fixed; left: 50%; bottom: 24px; transform: translateX(-50%); background: var(--accent); color: #fff; font-weight: 700; padding: 10px 18px; border-radius: 8px; box-shadow: 0 6px 20px rgba(0,0,0,.4); z-index: 100; }
+[hidden] { display: none !important; }
+@media (max-width: 480px) {
+  .tabs { width: 100%; }
+  .tabs button { flex: 1; padding: 8px 4px; font-size: 0.85rem; }
+}

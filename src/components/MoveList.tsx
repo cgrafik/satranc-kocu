@@ -1,8 +1,12 @@
 import { useEffect, useRef } from 'react';
 import { CLASS_INFO, type MoveClass } from '../lib/coach';
+import { toFigurine } from '../lib/describe';
 
 export interface ListMove {
-  trSan: string;
+  /** İngilizce SAN; ekranda taş simgesiyle gösterilir (♘f3). */
+  san: string;
+  /** Üzerine gelince/basılı tutunca gösterilen düz açıklama. */
+  title?: string;
   cls?: MoveClass;
 }
 
@@ -22,7 +26,10 @@ export default function MoveList({
 }) {
   const ref = useRef<HTMLDivElement>(null);
   useEffect(() => {
-    ref.current?.querySelector('.mv.current')?.scrollIntoView({ block: 'nearest' });
+    const list = ref.current;
+    const el = list?.querySelector<HTMLElement>('.mv.current');
+    // Yalnızca listenin kendi içinde kaydır (sayfayı kaydırma)
+    if (list && el) list.scrollTop = Math.max(0, el.offsetTop - list.clientHeight / 2);
   }, [current, moves.length]);
 
   const rows: { no: number; w?: number; b?: number }[] = [];
@@ -37,8 +44,8 @@ export default function MoveList({
     const m = moves[i];
     const info = m.cls ? CLASS_INFO[m.cls] : null;
     return (
-      <button className={`mv ${current === i ? 'current' : ''}`} onClick={() => onSelect(i)}>
-        {m.trSan}
+      <button className={`mv ${current === i ? 'current' : ''}`} onClick={() => onSelect(i)} title={m.title}>
+        {toFigurine(m.san)}
         {info && <span className={`cls-dot tone-${info.tone}`} title={info.label}>{info.short}</span>}
       </button>
     );

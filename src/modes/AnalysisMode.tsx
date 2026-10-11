@@ -11,6 +11,7 @@ import type { Analysis } from '../lib/engine';
 import { describeScore, formatScore, scoreFor } from '../lib/evaluation';
 import { tryMove, gameResult } from '../lib/game';
 import { toTurkishSan } from '../lib/tactics';
+import { describeMove, describeMoveObj, toFigurine } from '../lib/describe';
 import { AFTER_OPTS, COACH_OPTS, useEngine } from '../lib/useEngine';
 import { usePersistent } from '../lib/usePersistent';
 
@@ -18,6 +19,8 @@ const START = new Chess().fen();
 
 interface AMove {
   uci: string;
+  san: string;
+  text: string;
   trSan: string;
   fen: string;
   from: string;
@@ -31,7 +34,7 @@ function lineSans(fen: string, pv: string[], max = 8) {
   for (const u of pv.slice(0, max)) {
     try {
       const m = c.move({ from: u.slice(0, 2), to: u.slice(2, 4), promotion: u[4] });
-      out.push(toTurkishSan(m.san));
+      out.push(toFigurine(m.san));
     } catch {
       break;
     }
@@ -39,7 +42,7 @@ function lineSans(fen: string, pv: string[], max = 8) {
   return out;
 }
 
-export default function AnalysisMode() {
+export default function AnalysisMode({ active = true }: { active?: boolean }) {
   const { engine, status, error } = useEngine();
   const [opts, setOpts] = usePersistent('sk.analysis', { engineOn: true, hideLines: false, coach: true });
   const [startFen, setStartFen] = useState(START);
@@ -100,7 +103,7 @@ export default function AnalysisMode() {
     const c = new Chess(fen);
     const m = tryMove(c, from, to, promotion);
     if (!m) return false;
-    const am: AMove = { uci: m.from + m.to + (m.promotion ?? ''), trSan: toTurkishSan(m.san), fen: c.fen(), from: m.from, to: m.to };
+    const am: AMove = { uci: m.from + m.to + (m.promotion ?? ''), san: m.san, text: describeMoveObj(m, 'pastMine'), trSan: toTurkishSan(m.san), fen: c.fen(), from: m.from, to: m.to };
     // Aynı hamle zaten sıradaysa sadece ilerle
     if (moves[cursor + 1]?.uci === am.uci) {
       setCursor(cursor + 1);
@@ -115,6 +118,7 @@ export default function AnalysisMode() {
   };
 
   useEffect(() => {
+    if (!active) return;
     const onKey = (e: KeyboardEvent) => {
       if ((e.target as HTMLElement)?.tagName === 'INPUT' || (e.target as HTMLElement)?.tagName === 'TEXTAREA') return;
       if (e.key === 'ArrowLeft') setCursor((c) => Math.max(-1, c - 1));
@@ -122,7 +126,7 @@ export default function AnalysisMode() {
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, []);
+  }, [active]);
 
   const loadFen = () => {
     const f = fenInput.trim();
@@ -267,7 +271,11 @@ export default function AnalysisMode() {
                       return (
                         <li key={l.multipv}>
                           <span className="pv-score">{formatScore(ws)}</span>
-                          <span className="line">{lineSans(fen, l.pv).join(' ')}</span>
+                          <span>
+                            <strong>{describeMove(fen, l.pv[0], 'imp')}</strong>
+                            <br />
+                            <span className="line muted">{lineSans(fen, l.pv).join(' ')}</span>
+                          </span>
                         </li>
                       );
                     })}
@@ -289,7 +297,7 @@ export default function AnalysisMode() {
 
         <section className="card">
           <MoveList
-            moves={moves.map((m) => ({ trSan: m.trSan, cls: m.review?.cls }))}
+            moves={moves.map((m) => ({ san: m.san, title: m.text, cls: m.review?.cls }))}
             startsWithBlack={new Chess(startFen).turn() === 'b'}
             firstMoveNumber={Number(startFen.split(' ')[5] ?? 1)}
             current={cursor >= 0 ? cursor : null}

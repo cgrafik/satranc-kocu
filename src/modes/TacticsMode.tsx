@@ -1,6 +1,6 @@
 // Taktik antrenmanı: Lichess'in gerçek oyunlardan çıkardığı bulmacalar, tema tema.
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { Chess, type Square } from 'chess.js';
+import { Chess } from 'chess.js';
 import Board, { type Mark } from '../components/Board';
 import type { BoardArrow } from '../lib/coach';
 import { reviewMove } from '../lib/coach';
@@ -20,7 +20,7 @@ import {
   type ThemeId,
   type TacticsProgress,
 } from '../lib/puzzles';
-import { pieceName, squareAt, toTurkishSan } from '../lib/tactics';
+import { describeMove, describeMoveObj, sentence } from '../lib/describe';
 import { AFTER_OPTS, COACH_OPTS, useEngine } from '../lib/useEngine';
 import { usePersistent } from '../lib/usePersistent';
 import { soundForSan, playMoveSound } from '../lib/sound';
@@ -46,7 +46,7 @@ export default function TacticsMode() {
   const [lastMove, setLastMove] = useState<{ from: string; to: string } | null>(null);
   const [marks, setMarks] = useState<Record<string, Mark>>({});
   const [arrows, setArrows] = useState<BoardArrow[]>([]);
-  const [feedback, setFeedback] = useState<{ tone: 'good' | 'bad' | 'info'; title: string; lines: string[] } | null>(null);
+  const [feedback, setFeedback] = useState<{ tone: 'good' | 'bad' | 'info'; title: string; lines: string[]; steps?: string[] } | null>(null);
   const [hintLevel, setHintLevel] = useState(0);
   const [rollback, setRollback] = useState<{ fen: string; lastMove: { from: string; to: string } | null } | null>(null);
   const [delta, setDelta] = useState<number | null>(null);
@@ -153,7 +153,7 @@ export default function TacticsMode() {
 
     if (res === 'correct') {
       setMarks({ [m.to]: 'good' });
-      setFeedback({ tone: 'good', title: `✓ ${toTurkishSan(m.san)} doğru! Devam et.`, lines: [] });
+      setFeedback({ tone: 'good', title: '✓ Doğru! Devam et.', lines: [sentence(describeMoveObj(m, 'pastMine'))] });
       void playOpponent(puzzle, c.fen(), ply + 1, t);
       return true;
     }
@@ -165,7 +165,8 @@ export default function TacticsMode() {
       setFeedback({
         tone: 'good',
         title: hintLevel > 0 ? 'Çözüldü (ipucuyla).' : 'Harika, çözdün!',
-        lines: [...ex.points, `Çözüm: ${ex.line.join(' ')}`],
+        lines: ex.points,
+        steps: ex.line,
       });
       playMoveSound('end');
       return true;
@@ -186,11 +187,10 @@ export default function TacticsMode() {
         const rv = reviewMove(fenBefore, { from: m.from, to: m.to, promotion: m.promotion }, before, after);
         // Çözümle aynı kalitede (kazancı kaçırmayan) hamle → ceza yok, tekrar denesin.
         goodAlternative = (rv.cls === 'best' || rv.cls === 'excellent') && !(before.lines[0]?.score.type === 'mate');
-        lines = rv.reasons.filter((r) => !r.startsWith('Daha iyisi') && !r.startsWith('Mat fırsatı'));
+        lines = rv.reasons.filter((r) => !/^(Bunun yerine|Daha iyisi|Mat vardı|Mat fırsatı|Motorun tercihi)/.test(r));
         if (rv.refutation) {
           refuteArrow = { from: rv.refutation.uci.slice(0, 2), to: rv.refutation.uci.slice(2, 4), color: 'red' };
-          if (!lines.some((l) => l.includes('devamı') || l.includes('mat edebilir')))
-            lines.push(`Rakibin cevabı: ${rv.refutation.line.slice(0, 4).join(' ')}`);
+          if (!lines.some((l) => l.includes(rv.refutation!.text))) lines.push(`Rakibin cevabı: ${rv.refutation.text}.`);
         }
       } catch {
         /* motor yoksa sade "yanlış" mesajı */
@@ -203,7 +203,7 @@ export default function TacticsMode() {
         setStatus('solve');
         setFeedback({
           tone: 'info',
-          title: `${toTurkishSan(m.san)} fena değil, ama bulmacanın aradığı daha güçlü bir hamle var.`,
+          title: 'Fena değil, ama bulmacanın aradığı daha güçlü bir hamle var.',
           lines: ['Tekrar dene: zorlayıcı hamlelere (şah, alma, tehdit) bak.'],
         });
         return;
@@ -214,8 +214,8 @@ export default function TacticsMode() {
       setRollback({ fen: fenBefore, lastMove: lastBefore });
       setFeedback({
         tone: 'bad',
-        title: `✗ ${toTurkishSan(m.san)} doğru değil.`,
-        lines: lines.length ? lines : ['Bu hamle bulmacadaki fırsatı kaçırıyor.'],
+        title: '✗ Bu hamle doğru değil.',
+        lines: [sentence(`Senin hamlen: ${describeMoveObj(m, 'pastMine')}`), ...(lines.length ? lines : ['Bu hamle bulmacadaki fırsatı kaçırıyor.'])],
       });
     })();
     return true;
@@ -258,32 +258,17 @@ export default function TacticsMode() {
     }
     setArrows([]);
     const ex = explainSolution(puzzle);
-    setFeedback({ tone: 'info', title: 'Çözüm', lines: [...ex.points, `Çözüm: ${ex.line.join(' ')}`] });
+    setFeedback({ tone: 'info', title: 'Çözüm', lines: ex.points, steps: ex.line });
   };
 
   const hint = () => {
     if (!puzzle || status !== 'solve') return;
-    const level = Math.min(3, hintLevel + 1);
-    setHintLevel(level);
+    setHintLevel(1);
     const u = puzzle.moves[ply];
-    const theme = puzzle.themes.find((x): x is ThemeId => x in THEME_BY_ID);
-    if (level === 1) {
-      const info = theme ? THEME_BY_ID[theme] : null;
-      setFeedback({
-        tone: 'info',
-        title: info ? `İpucu: ${info.name} ara.` : 'İpucu: zorlayıcı hamlelere bak.',
-        lines: info ? [info.spot] : ['Şah çekişler, almalar ve tehditler.'],
-      });
-    } else if (level === 2) {
-      const piece = new Chess(fen).get(u.slice(0, 2) as Square);
-      setMarks({ [u.slice(0, 2)]: 'hint' });
-      setFeedback({ tone: 'info', title: `İpucu: ${squareAt(u.slice(0, 2))} duran ${piece ? pieceName(piece.type) : 'taş'} ile oyna.`, lines: [] });
-    } else {
-      setArrows([{ from: u.slice(0, 2), to: u.slice(2, 4), color: 'blue' }]);
-      setFeedback({ tone: 'info', title: 'İpucu: oku takip et.', lines: [] });
-    }
+    setArrows([{ from: u.slice(0, 2), to: u.slice(2, 4), color: 'green' }]);
+    setMarks({});
+    setFeedback({ tone: 'info', title: `👉 ${sentence(describeMove(fen, u, 'imp'))}`, lines: ['Yeşil ok hamleyi gösteriyor. Şimdi tahtada oyna.'] });
   };
-
   const select = (c: Choice) => {
     setChoice({ c });
     void start(c);
@@ -312,8 +297,8 @@ export default function TacticsMode() {
           marks={marks}
         />
         <div className="toolbar">
-          <button onClick={hint} disabled={status !== 'solve' || hintLevel >= 3}>
-            💡 İpucu {hintLevel > 0 ? `(${hintLevel}/3)` : ''}
+          <button onClick={hint} disabled={status !== 'solve' || hintLevel > 0}>
+            👉 Ne oynamalıyım?
           </button>
           {status === 'wrong' && (
             <button className="on" onClick={retry}>
@@ -359,6 +344,16 @@ export default function TacticsMode() {
                   <li key={i}>{l}</li>
                 ))}
               </ul>
+            )}
+            {feedback.steps && feedback.steps.length > 0 && (
+              <>
+                <strong className="small">Çözüm adım adım:</strong>
+                <ol className="small">
+                  {feedback.steps.map((s, i) => (
+                    <li key={i}>{s}</li>
+                  ))}
+                </ol>
+              </>
             )}
             {puzzle && (status === 'solved' || status === 'shown' || status === 'wrong') && (
               <p className="muted small">

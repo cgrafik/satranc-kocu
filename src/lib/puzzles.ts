@@ -1,7 +1,8 @@
 // Taktik bulmacaları: Lichess bulmaca veritabanından (CC0) süzülmüş gerçek oyun pozisyonları.
 // Biçim: fen = rakibin hamlesinden ÖNCEKİ konum; moves[0] rakibin hamlesi, sonra çözüm (kullanıcı, rakip, kullanıcı...).
 import { Chess, type Square } from 'chess.js';
-import { describeFork, detectFork, lineMaterialSwing, pieceForm, squareLoc, toTurkishSan } from './tactics';
+import { describeFork, detectFork, lineMaterialSwing } from './tactics';
+import { describeLine } from './describe';
 import type { Rng } from './bot';
 
 export interface RawPuzzle {
@@ -281,29 +282,25 @@ export function weakestThemes(prog: TacticsProgress, n = 3): { id: ThemeId; rate
     .slice(0, n);
 }
 
-/** Çözülen bulmacanın Türkçe açıklaması: çözüm dizisi, ne kazanıldı, hangi taktik. */
+/** Çözülen bulmacanın düz Türkçe açıklaması: adım adım çözüm, ne kazanıldı, hangi taktik. */
 export function explainSolution(p: Puzzle): { line: string[]; points: string[] } {
   const start = puzzleStart(p);
   const sol = p.moves.slice(1);
   const c = new Chess(start.fen);
-  const line: string[] = [];
   const points: string[] = [];
   sol.forEach((u, i) => {
     const m = c.move({ from: u.slice(0, 2), to: u.slice(2, 4), promotion: u[4] });
-    line.push(toTurkishSan(m.san));
-    if (i % 2 === 0) {
-      const fork = !c.isCheckmate() ? detectFork(c, m.to as Square) : null;
-      if (fork) points.push(`${toTurkishSan(m.san)}: ${describeFork(fork)}`);
-      else if (m.captured && i === 0) points.push(`${toTurkishSan(m.san)}: ${squareLoc(m.to)} ${pieceForm(m.captured, 'acc')} aldın.`);
-      if (m.promotion) points.push(`${toTurkishSan(m.san)}: piyon terfi etti.`);
+    if (i % 2 === 0 && !c.isCheckmate()) {
+      const fork = detectFork(c, m.to as Square);
+      if (fork) points.push(describeFork(fork));
     }
   });
   if (c.isCheckmate()) points.unshift('Mat! Rakip şahın kaçacak karesi kalmadı.');
   else {
     const swing = lineMaterialSwing(start.fen, sol, start.solver, 12).swing;
-    if (swing > 0) points.unshift(`Bu dizi sonunda yaklaşık ${swing} puanlık malzeme kazandın.`);
+    if (swing > 0) points.unshift(`Bu hamlelerle yaklaşık ${swing} piyon değerinde malzeme kazandın.`);
   }
   const names = p.themes.filter((t): t is ThemeId => t in THEME_BY_ID).map((t) => THEME_BY_ID[t].name);
-  if (names.length) points.push(`Tema: ${names.join(', ')}.`);
-  return { line, points };
+  if (names.length) points.push(`Taktik türü: ${names.join(', ')}.`);
+  return { line: describeLine(start.fen, sol, start.solver, 8), points };
 }
