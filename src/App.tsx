@@ -3,14 +3,16 @@ import PlayMode from './modes/PlayMode';
 import AnalysisMode from './modes/AnalysisMode';
 import TacticsMode from './modes/TacticsMode';
 import CounterMode from './modes/CounterMode';
+import GamesMode from './modes/GamesMode';
 import { loadLocal, saveLocal } from './lib/usePersistent';
 
-type Mode = 'play' | 'tactics' | 'counter' | 'analysis';
+type Mode = 'play' | 'tactics' | 'counter' | 'games' | 'analysis';
 
 const MODES: { id: Mode; label: string; desc: string }[] = [
   { id: 'play', label: 'Maç', desc: 'Motora karşı oyna, her hamlende koçtan geri bildirim al.' },
   { id: 'tactics', label: 'Taktik', desc: 'Gerçek oyunlardan bulmacalarla çatal, açmaz, mat... çalış.' },
   { id: 'counter', label: 'Karşı Hamle', desc: 'Rakip şunu yaparsa ben ne yapmalıyım?' },
+  { id: 'games', label: 'Oyunlarım', desc: 'chess.com oyunlarını analiz et, hatalarını tekrar çöz.' },
   { id: 'analysis', label: 'Analiz', desc: 'Konumu incele, motorun en iyi devamlarını gör.' },
 ];
 
@@ -20,6 +22,7 @@ export default function App() {
     return MODES.some((x) => x.id === m) ? m : 'play';
   });
   // Bir sekme ilk açıldığında yüklenir, sonra açık kalır: sekme değiştirince oyun/ilerleme sıfırlanmaz.
+  const [tacticsRequest, setTacticsRequest] = useState<{ theme: string; n: number } | null>(null);
   const [visited, setVisited] = useState<Set<Mode>>(() => new Set([mode]));
   const choose = (m: Mode) => {
     setMode(m);
@@ -53,8 +56,17 @@ export default function App() {
       </header>
       <main>
         {pane('play', <PlayMode active={mode === 'play'} />)}
-        {pane('tactics', <TacticsMode />)}
+        {pane('tactics', <TacticsMode request={tacticsRequest} />)}
         {pane('counter', <CounterMode active={mode === 'counter'} />)}
+        {pane(
+          'games',
+          <GamesMode
+            onPracticeTheme={(theme) => {
+              setTacticsRequest((r) => ({ theme, n: (r?.n ?? 0) + 1 }));
+              choose('tactics');
+            }}
+          />,
+        )}
         {pane('analysis', <AnalysisMode active={mode === 'analysis'} />)}
       </main>
       <footer className="foot muted small">

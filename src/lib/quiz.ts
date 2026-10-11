@@ -1,0 +1,19 @@
+// Tahmin sorusu ayarları ve skoru (yalnızca bu tarayıcıda).
+import { loadLocal } from './usePersistent';
+
+export type QuizMode = 'off' | 'sometimes' | 'always';
+export const QUIZ_MODE_KEY = 'sk.quiz.mode';
+export const QUIZ_STATS_KEY = 'sk.quiz.stats';
+
+export function getQuizMode(): QuizMode {
+  return loadLocal<{ mode: QuizMode }>(QUIZ_MODE_KEY, { mode: 'sometimes' }).mode;
+}
+
+/** "Bazen" modunda yaklaşık her iki sorudan birinde tahmin sorusu sorulur. */
+export function shouldQuiz(mode: QuizMode, rng: () => number = Math.random): boolean {
+  return mode === 'always' || (mode === 'sometimes' && rng() < 0.5);
+}
+
+export function getQuizStats(): { right: number; total: number } {
+  return loadLocal(QUIZ_STATS_KEY, { right: 0, total: 0 });
+}

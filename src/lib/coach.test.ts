@@ -1,7 +1,8 @@
 // Koç: gerçek motorla 400–900 seviyesinin tipik hata senaryoları.
 import { afterAll, describe, expect, it } from 'vitest';
 import { Chess } from 'chess.js';
-import { advise, classify, explainThreat, reviewMove } from './coach';
+import { advise, buildQuiz, classify, explainQuizChoice, explainThreat, QUIZ_OPTS, reviewMove } from './coach';
+import { seededRng } from './bot';
 import { createNodeEngine } from '../test/nodeEngine';
 import { passTurnFen } from './tactics';
 
@@ -132,5 +133,35 @@ describe('tehdit analizi (gerçek motor)', () => {
     expect(t.message).toBe("Dikkat! Rakip atıyla e5'teki atını alabilir.");
     // Motor burada atı kaçırmak yerine Axf3+ ile karşı atı alıyor; öneri düz cümle olmalı
     expect(t.advice).toMatch(/^Atın(ı|la) e5'ten/);
+  }, 60000);
+});
+
+describe('tahmin sorusu (gerçek motor)', () => {
+  it('bedava taş konumunda: en iyi + iki zayıf seçenek, karışık sırada', async () => {
+    const fen = '4k3/8/8/4n3/8/5N2/PP6/4K3 w - - 0 1';
+    const a = await engine.analyze(fen, QUIZ_OPTS);
+    const q = buildQuiz(fen, a, seededRng(3))!;
+    expect(q).not.toBeNull();
+    expect(q.options.map((o) => o.letter)).toEqual(['A', 'B', 'C']);
+    expect(q.options.filter((o) => o.correct)).toHaveLength(1);
+    expect(q.options.find((o) => o.correct)!.uci).toBe('f3e5');
+    expect(new Set(q.options.map((o) => o.uci)).size).toBe(3);
+    for (const o of q.options) expect(o.text).not.toMatch(/\b[KQRBN][a-h][1-8]/);
+    // yanlış seçimin açıklaması
+    const wrong = q.options.find((o) => !o.correct)!;
+    const c = new Chess(fen);
+    c.move({ from: wrong.uci.slice(0, 2), to: wrong.uci.slice(2, 4) });
+    const after = await engine.analyze(c.fen(), { depth: 12 });
+    const why = explainQuizChoice(fen, a, wrong.uci, after);
+    expect(why.join(' ')).toMatch(/En iyi hamlenin faydası/);
+    // doğru seçimin açıklaması
+    expect(explainQuizChoice(fen, a, 'f3e5', null)[0]).toMatch(/korumasız/);
+  }, 60000);
+
+  it('tek mantıklı hamle yoksa (seçenekler çok yakınsa) soru üretmez', async () => {
+    // Sadece şah hamleleri olan, hepsi berabere bir konum
+    const fen = '8/8/8/4k3/8/8/8/4K3 w - - 0 1';
+    const a = await engine.analyze(fen, QUIZ_OPTS);
+    expect(buildQuiz(fen, a)).toBeNull();
   }, 60000);
 });

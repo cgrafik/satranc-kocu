@@ -8,7 +8,25 @@ import EvalGraph from '../components/EvalGraph';
 import MoveList from '../components/MoveList';
 import CoachCard from '../components/CoachCard';
 import AdviceCard from '../components/AdviceCard';
-import { advise, CLASS_INFO, explainThreat, reviewMove, type Advice, type MoveClass, type MoveReview, type ThreatInfo } from '../lib/coach';
+import QuizCard from '../components/QuizCard';
+import { QUIZ_MODE_KEY, shouldQuiz, type QuizMode } from '../lib/quiz';
+import {
+  advise,
+  buildQuiz,
+  CLASS_INFO,
+  explainQuizChoice,
+  explainThreat,
+  QUIZ_OPTS,
+  reviewMove,
+  type Advice,
+  type BoardArrow,
+  type MoveClass,
+  type MoveReview,
+  type Quiz,
+  type QuizOption,
+  type ThreatInfo,
+} from '../lib/coach';
+import type { Analysis } from '../lib/engine';
 import { botSearchOptions, getLevel, LEVELS, pickBotMove, type LevelId } from '../lib/bot';
 import { gameResult, tryMove, type GameResult } from '../lib/game';
 import { passTurnFen, toTurkishSan } from '../lib/tactics';
@@ -113,6 +131,8 @@ export default function PlayMode({ active = true }: { active?: boolean }) {
   const [guardIdx, setGuardIdx] = useState<number | null>(null);
   const [threat, setThreat] = useState<ThreatInfo | null>(null);
   const [advice, setAdvice] = useState<Advice | null>(null);
+  const [quiz, setQuiz] = useState<{ quiz: Quiz; analysis: Analysis; picked: QuizOption | null } | null>(null);
+  const [quizMode, setQuizMode] = usePersistent<{ mode: QuizMode }>(QUIZ_MODE_KEY, { mode: 'sometimes' });
   const [resultText, setResultText] = useState<string | null>(initial?.resultText ?? null);
   const [liveScore, setLiveScore] = useState<Score | null>(null);
   const [engineErr, setEngineErr] = useState<string | null>(null);
@@ -159,6 +179,7 @@ export default function PlayMode({ active = true }: { active?: boolean }) {
   const clearAids = () => {
     setThreat(null);
     setAdvice(null);
+    setQuiz(null);
     setCompare(null);
   };
 
@@ -364,13 +385,26 @@ export default function PlayMode({ active = true }: { active?: boolean }) {
   };
 
   const showAdvice = async () => {
-    if (advice) return setAdvice(null);
+    if (advice || quiz) {
+      setAdvice(null);
+      setQuiz(null);
+      return;
+    }
     setThreat(null);
     setCompare(null);
     setView(null);
     const fen = liveFen;
     setBusy('advice');
     try {
+      // Bazen direkt söylemek yerine 3 seçenek sorar: kullanıcı en iyisini tahmin eder.
+      if (shouldQuiz(quizMode.mode)) {
+        const a = await engine.analyze(fen, QUIZ_OPTS);
+        if (fenOf(movesRef.current) !== fen) return;
+        const q = buildQuiz(fen, a);
+        if (q) setQuiz({ quiz: q, analysis: a, picked: null });
+        else setAdvice(advise(fen, a));
+        return;
+      }
       const a = await engine.analyze(fen, COACH_OPTS);
       if (fenOf(movesRef.current) === fen) setAdvice(advise(fen, a));
     } catch (e) {
@@ -402,7 +436,15 @@ export default function PlayMode({ active = true }: { active?: boolean }) {
   const review = selected !== null ? moves[selected]?.review : undefined;
   let boardFen = liveFen;
   let lastMove: { from: string; to: string } | null = moves.length ? moves[moves.length - 1] : null;
-  let arrows = threat?.arrows ?? advice?.arrows ?? [];
+  const quizArrows: BoardArrow[] | null = quiz
+    ? quiz.picked
+      ? [
+          ...(quiz.picked.correct ? [] : [{ from: quiz.picked.uci.slice(0, 2), to: quiz.picked.uci.slice(2, 4), color: 'red' as const }]),
+          { from: quiz.quiz.bestUci.slice(0, 2), to: quiz.quiz.bestUci.slice(2, 4), color: 'green' as const },
+        ]
+      : quiz.quiz.options.map((o) => ({ from: o.uci.slice(0, 2), to: o.uci.slice(2, 4), color: o.color }))
+    : null;
+  let arrows = threat?.arrows ?? quizArrows ?? advice?.arrows ?? [];
   let marks: Record<string, Mark> = {};
   if (threat) for (const s of threat.dangerSquares) marks[s] = 'danger';
   let interactive = phase === 'playing' && (!busy || busy === 'threat' || busy === 'advice') && guardIdx === null;
@@ -558,6 +600,22 @@ export default function PlayMode({ active = true }: { active?: boolean }) {
               <input type="checkbox" checked={setup.showEval} onChange={(e) => setSetup({ ...setup, showEval: e.target.checked })} />
               <span>Oyun sırasında değerlendirme çubuğunu göster</span>
             </label>
+            <div className="field" role="group" aria-label="Tahmin soruları">
+              <span>Ne oynamalıyım butonuna basınca</span>
+              <div className="seg">
+                {(
+                  [
+                    ['off', 'Hep cevabı söyle'],
+                    ['sometimes', 'Bazen 3 şık sor'],
+                    ['always', 'Hep 3 şık sor'],
+                  ] as const
+                ).map(([m, label]) => (
+                  <button key={m} className={quizMode.mode === m ? 'on' : ''} onClick={() => setQuizMode({ mode: m })}>
+                    {label}
+                  </button>
+                ))}
+              </div>
+            </div>
             <label className="check">
               <input type="checkbox" checked={setup.sound} onChange={(e) => setSetup({ ...setup, sound: e.target.checked })} />
               <span>Hamle sesleri</span>
@@ -600,7 +658,7 @@ export default function PlayMode({ active = true }: { active?: boolean }) {
         {phase !== 'setup' && (
           <>
             <div className="actions">
-              <button onClick={showAdvice} className={advice ? 'on' : ''} disabled={phase !== 'playing' || !isMyTurn || busy === 'bot' || busy === 'review'}>
+              <button onClick={showAdvice} className={advice || quiz ? 'on' : ''} disabled={phase !== 'playing' || !isMyTurn || busy === 'bot' || busy === 'review'}>
                 👉 Ne oynamalıyım?
               </button>
               <button onClick={showThreat} className={threat ? 'on' : ''} disabled={phase !== 'playing' || busy === 'bot' || busy === 'review'}>
@@ -627,6 +685,22 @@ export default function PlayMode({ active = true }: { active?: boolean }) {
                   </button>
                 </div>
               </section>
+            )}
+
+            {quiz && (
+              <QuizCard
+                key={quiz.quiz.fen}
+                quiz={quiz.quiz}
+                onReveal={(o) => setQuiz((q) => (q ? { ...q, picked: o } : q))}
+                explain={async (uci) => {
+                  const c = new Chess(quiz.quiz.fen);
+                  c.move({ from: uci.slice(0, 2), to: uci.slice(2, 4), promotion: uci[4] });
+                  const after = c.isGameOver() ? null : await engine.analyze(c.fen(), AFTER_OPTS);
+                  return explainQuizChoice(quiz.quiz.fen, quiz.analysis, uci, after);
+                }}
+                onPlay={(u) => onUserMove(u.slice(0, 2), u.slice(2, 4), u[4])}
+                onClose={() => setQuiz(null)}
+              />
             )}
 
             {advice && <AdviceCard advice={advice} onPlay={(u) => onUserMove(u.slice(0, 2), u.slice(2, 4), u[4])} onClose={() => setAdvice(null)} />}
@@ -687,7 +761,7 @@ export default function PlayMode({ active = true }: { active?: boolean }) {
               </section>
             )}
 
-            {review && !advice && !threat && (
+            {review && !advice && !threat && !quiz && (
               <CoachCard
                 review={review}
                 compare={compare}
@@ -733,6 +807,15 @@ export default function PlayMode({ active = true }: { active?: boolean }) {
                   <input type="checkbox" checked={setup.showEval} onChange={(e) => setSetup({ ...setup, showEval: e.target.checked })} />
                   <span>Değerlendirme</span>
                 </label>
+                <select
+                  aria-label="Tahmin soruları"
+                  value={quizMode.mode}
+                  onChange={(e) => setQuizMode({ mode: e.target.value as QuizMode })}
+                >
+                  <option value="off">Hep cevabı söyle</option>
+                  <option value="sometimes">Bazen 3 şık sor</option>
+                  <option value="always">Hep 3 şık sor</option>
+                </select>
                 <button
                   onClick={() => {
                     if (moves.length === 0 || isSaved || confirm('Yeni oyuna geçilsin mi? Bu oyunu saklamak istersen önce "Hafızaya al"a bas.')) {

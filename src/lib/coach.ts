@@ -29,8 +29,21 @@ export const THRESHOLDS = { best: 1, excellent: 3, good: 6, inaccuracy: 10, mist
 export interface BoardArrow {
   from: string;
   to: string;
-  color: 'green' | 'red' | 'orange' | 'blue';
+  color: 'green' | 'red' | 'orange' | 'blue' | 'purple';
 }
+
+/** Hata türü etiketleri (oyun raporunda en sık hataları saymak için). */
+export type MistakeTag = 'hung' | 'missedThreat' | 'allowedMate' | 'missedMate' | 'missedCapture' | 'missedFork' | 'timePressure';
+
+export const TAG_INFO: Record<MistakeTag, { label: string; tip: string; theme: string }> = {
+  hung: { label: 'Taşını korumasız kareye götürdün', tip: 'Hamleni yapmadan önce sor: gittiğim kareye rakibin hangi taşı saldırıyor?', theme: 'hangingPiece' },
+  missedThreat: { label: 'Rakibin tehdidini görmedin', tip: 'Rakip her hamle yaptığında önce sor: bu hamle neye saldırıyor?', theme: 'hangingPiece' },
+  allowedMate: { label: 'Rakibe mat imkânı verdin', tip: 'Şahının etrafındaki kaçış karelerini kontrol et; arka sıra matına dikkat.', theme: 'backRankMate' },
+  missedMate: { label: 'Mat fırsatını kaçırdın', tip: 'Her hamlede önce tüm şah çekişlere bak.', theme: 'mateIn1' },
+  missedCapture: { label: 'Bedava taşı almadın', tip: 'Rakibin korumasız taşlarını her hamlede tara.', theme: 'hangingPiece' },
+  missedFork: { label: 'Çatal fırsatını kaçırdın', tip: 'Atının sıçrayabileceği karelerden iki taşa birden saldırabilir misin?', theme: 'fork' },
+  timePressure: { label: 'Süre baskısında hata yaptın', tip: 'Açılışta hızlı oyna, süreni karmaşık anlara sakla.', theme: 'mixed' },
+};
 
 export interface MoveReview {
   ply: number;
@@ -56,6 +69,8 @@ export interface MoveReview {
   refutation?: { uci: string; text: string; steps: string[] };
   /** "Neden?" maddeleri. */
   reasons: string[];
+  /** Hata türleri. */
+  tags: MistakeTag[];
   beforeArrows: BoardArrow[];
   afterArrows: BoardArrow[];
   dangerSquares: string[];
@@ -133,6 +148,7 @@ export function reviewMove(
   const beforeArrows: BoardArrow[] = [];
   const afterArrows: BoardArrow[] = [];
   const dangerSquares: string[] = [];
+  const tags: MistakeTag[] = [];
   const playedText = describeMoveObj(played, 'pastMine');
 
   let best: MoveReview['best'];
@@ -175,6 +191,7 @@ export function reviewMove(
           : `Bu hamleden sonra rakip ${n} hamlede mat edebilir. İlk adımı: ${refutation?.text}.`,
       );
       cls = 'blunder';
+      tags.push('allowedMate');
     }
 
     // 2) Mat fırsatı kaçtı mı?
@@ -184,6 +201,7 @@ export function reviewMove(
           ? `Mat vardı! ${best.text}.`
           : `Mat fırsatı vardı! ${best.text}; ${bestScore.value} hamlede mat ediyordun.`,
       );
+      tags.push('missedMate');
     }
 
     // 3) Taş kaybı
@@ -197,8 +215,10 @@ export function reviewMove(
           const wasHangingBefore = hangingBefore.some((h) => h.square === capSq);
           if (capSq === played.to) {
             reasons.push(`${cap(pieceForm(played.piece, 'myAcc'))} savunmasız bir kareye götürdün. ${refutation.text}.`);
+            tags.push('hung');
           } else if (wasHangingBefore) {
             reasons.push(`Rakibin tehdidini kaçırdın: ${squareLoc(capSq)} ${pieceForm(first.captured, 'myNom')} zaten saldırı altındaydı. ${refutation.text}.`);
+            tags.push('missedThreat');
           } else {
             reasons.push(`${refutation.text}.`);
           }
@@ -219,6 +239,7 @@ export function reviewMove(
       const fork = detectFork(bm.chess, bm.move.to as Square);
       if (gainBest >= 2) {
         if (bm.move.captured) {
+          tags.push('missedCapture');
           const undefended = new Chess(fenBefore).attackers(bm.move.to as Square, opp).length === 0;
           reasons.push(
             undefended
@@ -226,6 +247,7 @@ export function reviewMove(
               : `Bunun yerine: ${best.text}. Böylece yaklaşık ${worth(gainBest)} malzeme kazanıyordun.`,
           );
         } else if (fork) {
+          tags.push('missedFork');
           reasons.push(`Bunun yerine: ${best.text}. ${describeFork(fork)}`);
         } else {
           reasons.push(`Bunun yerine: ${best.text}. Bu devamla yaklaşık ${worth(gainBest)} malzeme kazanıyordun.`);
@@ -285,6 +307,7 @@ export function reviewMove(
     best,
     refutation,
     reasons: reasons.map(tidy),
+    tags: [...new Set(tags)],
     beforeArrows,
     afterArrows,
     dangerSquares,
@@ -445,4 +468,86 @@ export function advise(fen: string, analysis: Analysis): Advice | null {
     alternatives,
     arrows: [{ from: bm.move.from, to: bm.move.to, color: 'green' }],
   };
+}
+
+// ---------------------------------------------------------------------------
+// Tahmin sorusu: "Bu üç hamleden hangisi en iyi?" — öneriyi direkt vermek yerine düşündürür.
+export interface QuizOption {
+  uci: string;
+  letter: 'A' | 'B' | 'C';
+  text: string;
+  color: 'blue' | 'orange' | 'purple';
+  /** En iyi hamleye göre kazanma yüzdesi kaybı. */
+  diff: number;
+  /** En iyiye çok yakınsa (≤ 2) doğru sayılır. */
+  correct: boolean;
+  quality: string;
+}
+
+export interface Quiz {
+  fen: string;
+  options: QuizOption[];
+  bestUci: string;
+}
+
+/** Soru için önerilen analiz ayarı: daha çok aday hamle gerekir. */
+export const QUIZ_OPTS = { depth: 12, multipv: 6, movetime: 2500, timeoutMs: 7000 } as const;
+
+const qualityOf = (diff: number) =>
+  diff <= 2 ? 'en iyi hamle' : diff <= 8 ? 'biraz daha zayıf' : diff <= 20 ? 'zayıf' : 'kötü — konumu bozuyor';
+
+/**
+ * En iyi hamle + biri biraz zayıf + biri belirgin şekilde zayıf üç seçenek üretir.
+ * Seçenekler yeterince farklı değilse (hepsi neredeyse eşit) null döner; o zaman normal öneri gösterilir.
+ */
+export function buildQuiz(fen: string, analysis: Analysis, rng: () => number = Math.random): Quiz | null {
+  const lines = analysis.lines.filter((l) => l.pv.length > 0);
+  if (lines.length < 3) return null;
+  const bestWin = winPercent(lines[0].score);
+  const scored = lines.map((l) => ({ l, diff: Math.max(0, bestWin - winPercent(l.score)) }));
+  const distractors = scored.filter((x) => x.diff >= 5);
+  if (distractors.length < 2) return null;
+  // Orta zorlukta bir çeldirici (en küçük fark) ve belirgin bir çeldirici (en büyük fark)
+  const medium = distractors[0];
+  const strong = distractors[distractors.length - 1];
+  const picked = [scored[0], medium, strong];
+  const order = picked.map((p) => ({ p, k: rng() })).sort((a, b) => a.k - b.k).map((x) => x.p);
+  const letters = ['A', 'B', 'C'] as const;
+  const colors = ['blue', 'orange', 'purple'] as const;
+  const options: QuizOption[] = [];
+  order.forEach((p, i) => {
+    const m = moveOf(fen, p.l.pv[0]);
+    if (!m) return;
+    options.push({
+      uci: p.l.pv[0],
+      letter: letters[i],
+      text: describeMoveObj(m.move, 'imp'),
+      color: colors[i],
+      diff: p.diff,
+      correct: p.diff <= 2,
+      quality: qualityOf(p.diff),
+    });
+  });
+  if (options.length !== 3) return null;
+  return { fen, options, bestUci: lines[0].pv[0] };
+}
+/**
+ * Tahmin sorusunda seçilen hamlenin açıklaması.
+ * Doğruysa neden iyi olduğu; yanlışsa neden zayıf olduğu ve en iyi hamlenin faydası.
+ * @param after seçilen hamleden sonraki konumun analizi (yanlış seçimde gerekir)
+ */
+export function explainQuizChoice(fen: string, analysis: Analysis, uci: string, after: Analysis | null): string[] {
+  const me = new Chess(fen).turn();
+  const best = analysis.lines[0];
+  const line = analysis.lines.find((l) => l.pv[0] === uci);
+  const bestWin = best ? winPercent(best.score) : 50;
+  if (line && bestWin - winPercent(line.score) <= 2) return whyGood(fen, line, me).map(tidy);
+  const r = reviewMove(fen, { from: uci.slice(0, 2), to: uci.slice(2, 4), promotion: uci[4] }, analysis, after);
+  const out = r.reasons.filter((x) => !/^(Bunun yerine|Daha iyisi|Motorun tercihi|Sağlam bir hamle|Motorun da)/.test(x));
+  if (out.length === 0) out.push('Bu hamle kötü değil ama rakibe daha rahat bir oyun bırakıyor.');
+  if (best) {
+    const good = whyGood(fen, best, me)[0];
+    if (good) out.push(`En iyi hamlenin faydası: ${good.charAt(0).toLocaleLowerCase('tr-TR')}${good.slice(1)}`);
+  }
+  return out.map(tidy);
 }

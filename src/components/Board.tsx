@@ -87,6 +87,7 @@ const ARROW_COLORS: Record<BoardArrow['color'] | 'user', string> = {
   red: 'rgba(204, 40, 40, 0.85)',
   orange: 'rgba(230, 143, 0, 0.9)',
   blue: 'rgba(40, 110, 220, 0.85)',
+  purple: 'rgba(150, 70, 200, 0.85)',
   user: 'rgba(255, 170, 0, 0.8)',
 };
 

@@ -4,9 +4,23 @@ import { useEffect, useRef, useState } from 'react';
 import { Chess } from 'chess.js';
 import Board from '../components/Board';
 import AdviceCard from '../components/AdviceCard';
+import QuizCard from '../components/QuizCard';
+import { getQuizMode, shouldQuiz } from '../lib/quiz';
 import CoachCard from '../components/CoachCard';
 import MoveList from '../components/MoveList';
-import { advise, reviewMove, type Advice, type BoardArrow, type MoveReview } from '../lib/coach';
+import {
+  advise,
+  buildQuiz,
+  explainQuizChoice,
+  QUIZ_OPTS,
+  reviewMove,
+  type Advice,
+  type BoardArrow,
+  type MoveReview,
+  type Quiz,
+  type QuizOption,
+} from '../lib/coach';
+import type { Analysis } from '../lib/engine';
 import { describeMoveObj, sentence } from '../lib/describe';
 import { gameResult, tryMove } from '../lib/game';
 import { AFTER_OPTS, COACH_OPTS, useEngine } from '../lib/useEngine';
@@ -38,6 +52,7 @@ export default function CounterMode({ active = true }: { active?: boolean }) {
   const { engine, status } = useEngine();
   const [st, setSt] = useState<CounterState>(() => loadLocal<CounterState>(KEY, { myColor: 'w', startFen: START, moves: [] }));
   const [advice, setAdvice] = useState<{ advice: Advice; context?: string; fen: string } | null>(null);
+  const [quiz, setQuiz] = useState<{ quiz: Quiz; analysis: Analysis; context?: string; picked: QuizOption | null } | null>(null);
   const [oppBest, setOppBest] = useState<{ text: string; uci: string; fen: string } | null>(null);
   const [review, setReview] = useState<MoveReview | null>(null);
   const [compare, setCompare] = useState<'before' | 'after' | null>(null);
@@ -56,6 +71,7 @@ export default function CounterMode({ active = true }: { active?: boolean }) {
     token.current++;
     setSt((s) => ({ ...s, moves: [], ...next }));
     setAdvice(null);
+    setQuiz(null);
     setOppBest(null);
     setReview(null);
     setCompare(null);
@@ -67,6 +83,15 @@ export default function CounterMode({ active = true }: { active?: boolean }) {
     setBusy(true);
     setErr(null);
     try {
+      if (shouldQuiz(getQuizMode())) {
+        const qa = await engine.analyze(f, QUIZ_OPTS);
+        if (t !== token.current) return;
+        const q = buildQuiz(f, qa);
+        if (q) {
+          setQuiz({ quiz: q, analysis: qa, context, picked: null });
+          return;
+        }
+      }
       const a = await engine.analyze(f, COACH_OPTS);
       if (t !== token.current) return;
       const adv = advise(f, a);
@@ -98,6 +123,7 @@ export default function CounterMode({ active = true }: { active?: boolean }) {
     setOppBest(null);
     setCompare(null);
     setAdvice(null);
+    setQuiz(null);
     const fenBefore = fen;
     if (!mine) {
       // Rakip (kullanıcının oynadığı) hamleden sonra: en iyi cevabı söyle
@@ -145,6 +171,7 @@ export default function CounterMode({ active = true }: { active?: boolean }) {
     setBusy(false);
     setSt((s) => ({ ...s, moves: s.moves.slice(0, -1) }));
     setAdvice(null);
+    setQuiz(null);
     setOppBest(null);
     setReview(null);
     setCompare(null);
@@ -169,6 +196,13 @@ export default function CounterMode({ active = true }: { active?: boolean }) {
   let lastMove = st.moves.length ? st.moves[st.moves.length - 1] : null;
   const marks: Record<string, 'danger'> = {};
   if (advice && advice.fen === fen) arrows = advice.advice.arrows;
+  if (quiz && quiz.quiz.fen === fen)
+    arrows = quiz.picked
+      ? [
+          ...(quiz.picked.correct ? [] : [{ from: quiz.picked.uci.slice(0, 2), to: quiz.picked.uci.slice(2, 4), color: 'red' as const }]),
+          { from: quiz.quiz.bestUci.slice(0, 2), to: quiz.quiz.bestUci.slice(2, 4), color: 'green' as const },
+        ]
+      : quiz.quiz.options.map((o) => ({ from: o.uci.slice(0, 2), to: o.uci.slice(2, 4), color: o.color }));
   if (oppBest && oppBest.fen === fen) arrows = [{ from: oppBest.uci.slice(0, 2), to: oppBest.uci.slice(2, 4), color: 'orange' }];
   if (compare && review) {
     boardFen = compare === 'before' ? review.fenBefore : review.fenAfter;
@@ -237,7 +271,10 @@ export default function CounterMode({ active = true }: { active?: boolean }) {
             </div>
           </div>
           <div className="actions">
-            <button onClick={() => (advice ? setAdvice(null) : computeAdvice(fen))} disabled={!myTurn || over || busy}>
+            <button
+              onClick={() => (advice || quiz ? (setAdvice(null), setQuiz(null)) : computeAdvice(fen))}
+              disabled={!myTurn || over || busy}
+            >
               👉 Ne oynamalıyım?
             </button>
             <button onClick={() => (oppBest ? setOppBest(null) : showOppBest())} disabled={myTurn || over || busy}>
@@ -259,6 +296,22 @@ export default function CounterMode({ active = true }: { active?: boolean }) {
               Rakip adına bunu oyna
             </button>
           </section>
+        )}
+
+        {quiz && quiz.quiz.fen === fen && (
+          <QuizCard
+            key={quiz.quiz.fen}
+            quiz={quiz.quiz}
+            context={quiz.context}
+            onReveal={(o) => setQuiz((q) => (q ? { ...q, picked: o } : q))}
+            explain={async (uci) => {
+              const c = new Chess(quiz.quiz.fen);
+              c.move({ from: uci.slice(0, 2), to: uci.slice(2, 4), promotion: uci[4] });
+              const after = c.isGameOver() ? null : await engine.analyze(c.fen(), AFTER_OPTS);
+              return explainQuizChoice(quiz.quiz.fen, quiz.analysis, uci, after);
+            }}
+            onPlay={(u) => onMove(u.slice(0, 2), u.slice(2, 4), u[4])}
+          />
         )}
 
         {advice && advice.fen === fen && (

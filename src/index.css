@@ -235,3 +235,33 @@ button.saved { background: #2f4a25; }
   .tabs { width: 100%; }
   .tabs button { flex: 1; padding: 8px 4px; font-size: 0.85rem; }
 }
+/* Tahmin sorusu */
+.quiz { border-left: 4px solid var(--blue); }
+.quiz.tone-good { border-left-color: var(--good); }
+.quiz.tone-bad { border-left-color: var(--bad); }
+.quiz-options { display: flex; flex-direction: column; gap: 6px; margin: 8px 0; }
+.quiz-opt { display: flex; align-items: center; gap: 10px; text-align: left; padding: 10px; font-size: 1rem; }
+.quiz-opt:disabled { opacity: 1; cursor: default; }
+.quiz-opt.right { background: #2f4a25; outline: 2px solid var(--good); }
+.quiz-opt.wrong { background: #5a2a24; outline: 2px solid var(--bad); }
+.quiz-opt.dim { opacity: 0.6 !important; }
+.quiz-letter { flex: none; width: 28px; height: 28px; border-radius: 50%; display: grid; place-items: center; font-weight: 800; color: #fff; }
+.quiz-text { display: flex; flex-direction: column; }
+.quiz-quality { color: var(--muted); font-size: 0.78rem; }
+.quiz-result h3 { margin-top: 4px; }
+select { font: inherit; color: var(--text); background: var(--panel-2); border: 0; border-radius: 6px; padding: 8px; }
+/* Oyunlarım */
+.game-list, .tag-list, .critical-list { list-style: none; padding: 0 !important; margin: 0; }
+.game-list li { display: flex; align-items: center; gap: 10px; padding: 8px 0; border-top: 1px solid #3a3835; }
+.game-info { flex: 1; display: flex; flex-direction: column; min-width: 0; }
+.game-info strong { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.res { flex: none; width: 26px; height: 26px; border-radius: 6px; display: grid; place-items: center; font-weight: 800; color: #fff; }
+.res-win { background: var(--good); }
+.res-loss { background: var(--bad); }
+.res-draw { background: #777; }
+.tag-list li { padding: 6px 0; border-top: 1px solid #3a3835; }
+.critical-list li { padding: 10px 0; border-top: 1px solid #3a3835; display: flex; flex-direction: column; gap: 4px; }
+.progress { height: 10px; background: #403d39; border-radius: 5px; overflow: hidden; margin: 8px 0; }
+.progress span { display: block; height: 100%; background: var(--accent); transition: width 0.3s; }
+textarea { width: 100%; font: inherit; font-size: 0.85rem; color: var(--text); background: #1e1c1a; border: 1px solid #4a4845; border-radius: 6px; padding: 8px; margin: 6px 0; }
+@media (max-width: 480px) { .tabs button { font-size: 0.78rem; padding: 8px 2px; } }

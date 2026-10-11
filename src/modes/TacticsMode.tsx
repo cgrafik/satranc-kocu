@@ -30,7 +30,7 @@ type Choice = ThemeId | 'mixed' | 'review';
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
-export default function TacticsMode() {
+export default function TacticsMode({ request }: { request?: { theme: string; n: number } | null }) {
   const { engine } = useEngine();
   const [prog, setProg] = usePersistent<TacticsProgress>('sk.tactics', EMPTY_PROGRESS);
   const [choice, setChoice] = usePersistent<{ c: Choice }>('sk.tactics.choice', { c: 'hangingPiece' });
@@ -273,6 +273,15 @@ export default function TacticsMode() {
     setChoice({ c });
     void start(c);
   };
+
+  // Başka sekmeden (Oyunlarım) gelen tema isteği
+  useEffect(() => {
+    if (!request || !all) return;
+    const c = (request.theme in THEME_BY_ID ? request.theme : 'mixed') as Choice;
+    setChoice({ c });
+    void start(c);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [request?.n, all]);
 
   const weak = weakestThemes(prog);
   const solverName = orientation === 'w' ? 'Beyaz' : 'Siyah';
