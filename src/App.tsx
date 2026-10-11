@@ -1,13 +1,15 @@
 import { useState } from 'react';
 import PlayMode from './modes/PlayMode';
 import AnalysisMode from './modes/AnalysisMode';
+import TacticsMode from './modes/TacticsMode';
 import { loadLocal, saveLocal } from './lib/usePersistent';
 
-type Mode = 'play' | 'analysis';
+type Mode = 'play' | 'tactics' | 'analysis';
 
 const MODES: { id: Mode; label: string; desc: string }[] = [
   { id: 'play', label: 'Eğitmenle Maç', desc: 'Motora karşı oyna, her hamlende koçtan geri bildirim al.' },
-  { id: 'analysis', label: 'Serbest Analiz', desc: 'Konumu incele, motorun en iyi devamlarını gör.' },
+  { id: 'tactics', label: 'Taktik', desc: 'Gerçek oyunlardan bulmacalarla çatal, açmaz, mat... çalış.' },
+  { id: 'analysis', label: 'Analiz', desc: 'Konumu incele, motorun en iyi devamlarını gör.' },
 ];
 
 export default function App() {
@@ -33,13 +35,13 @@ export default function App() {
           ))}
         </nav>
       </header>
-      <main>{mode === 'play' ? <PlayMode /> : <AnalysisMode />}</main>
+      <main>{mode === 'play' ? <PlayMode /> : mode === 'tactics' ? <TacticsMode /> : <AnalysisMode />}</main>
       <footer className="foot muted small">
         Analiz: <a href="https://stockfishchess.org" target="_blank" rel="noreferrer">Stockfish 19</a> (GPL-3.0,{' '}
         <a href={`${import.meta.env.BASE_URL}engine/STOCKFISH-LICENSE-GPL3.txt`} target="_blank" rel="noreferrer">
           lisans
         </a>
-        ) · Kurallar: chess.js (BSD-2) · Taş görselleri: react-chessboard (MIT). Motor tarayıcında çalışır; oyunların ve ayarların
+        ) · Kurallar: chess.js (BSD-2) · Bulmacalar: Lichess (CC0) · Taş görselleri: react-chessboard (MIT). Motor tarayıcında çalışır; oyunların ve ayarların
         yalnızca bu cihazda saklanır, hiçbir yere gönderilmez.
       </footer>
     </div>

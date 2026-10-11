@@ -1,5 +1,7 @@
 # Satranç Koçu
 
+**Canlı:** https://cgrafik.github.io/satranc-kocu/ (`main`'e her push GitHub Actions ile test edilip yayınlanır)
+
 Türkçe, tarayıcıda çalışan kişisel satranç antrenörü. Hedef kitle: **chess.com'da 400–900 puan** arası oyuncular. Bu seviyede oyunları en çok belirleyen şeyler bedava taş bırakmak, rakibin tehdidini görmemek ve basit taktikleri kaçırmak. Uygulama önce bunlara odaklanıyor.
 
 ## Çalıştırma
@@ -25,7 +27,8 @@ Sunucu, API anahtarı ya da ücretli servis gerekmez. Motor kullanıcının tara
 | Koç | `src/lib/coach.ts` | Hamle sınıflandırma, Türkçe "Neden?" açıklamaları, tehdit analizi, kademeli ipucu |
 | Rakip | `src/lib/bot.ts` | 5 seviye. Düşük derinlik + MultiPV + olasılıklı seçim |
 | Arayüz | `src/components/Board.tsx` | chess.com tarzı tahta: tıklayınca yasal kareler, sürükle-bırak, oklar, terfi |
-| Modlar | `src/modes/PlayMode.tsx`, `AnalysisMode.tsx` | Eğitmenle maç, serbest analiz |
+| Taktik | `src/lib/puzzles.ts`, `src/data/puzzles.json` | Lichess bulmacaları (CC0), tema seçimi, kişisel taktik puanı (Elo), hata tekrarı |
+| Modlar | `src/modes/PlayMode.tsx`, `TacticsMode.tsx`, `AnalysisMode.tsx` | Eğitmenle maç, taktik, serbest analiz |
 
 ### Hamle sınıflandırması
 
@@ -58,6 +61,16 @@ Stockfish'in kendi `UCI_Elo` ayarı en düşük 1320'ye iniyor; bu, 400–900 ba
 | Usta – İleri | 20/20 |
 
 Seviyelerin sıralaması doğrulandı. Arayüzdeki "≈ 400/600/800" etiketleri ise **tahmindir**; insanlara karşı ölçülmediği için chess.com puanıyla birebir eşleşmez.
+
+### Taktik bulmacaları
+
+`src/data/puzzles.json`, [Lichess bulmaca veritabanından](https://database.lichess.org/#puzzles) (CC0, 02.10.2026 sürümü) süzüldü. 5,98 milyon bulmaca tarandı ve 1519 tanesi seçildi. Seçim kuralları:
+- Puan 400–1500 arası.
+- Puan sapması 90 veya altı, popülerlik 85 veya üstü, en az 500 oynanma.
+- Rakibin ilk hamlesi dahil en fazla 7 yarım hamle.
+- 14 temanın her biri için 100 puanlık her dilimden en fazla 12 bulmaca.
+
+Testler tüm bulmacalardaki her hamlenin yasal olduğunu ve mat temalı bulmacaların gerçekten matla bittiğini doğrular. Son hamlede mat eden alternatif bir hamle de doğru sayılır (Lichess kuralı). Çözümden farklı ama motora göre aynı kalitede bir hamle oynanırsa puan düşmez; kullanıcıdan tekrar denemesi istenir.
 
 ## Lisanslar
 

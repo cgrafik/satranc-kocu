@@ -189,3 +189,26 @@ strong.tone-bad { color: var(--bad); }
   .evalbar { width: 14px; }
   .actions { grid-template-columns: 1fr; }
 }
+
+/* Taktik */
+.tactics-stats { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; text-align: center; }
+.tactics-stats > div { display: flex; flex-direction: column; align-items: center; position: relative; }
+.tactics-stats strong { font-size: 1.6rem; line-height: 1.1; }
+.tactics-stats small { color: var(--muted); font-size: 0.75rem; }
+.tactics-stats em { font-style: normal; font-weight: 700; font-size: 0.85rem; }
+.tactics-stats em.up { color: var(--good); }
+.tactics-stats em.down { color: var(--bad); }
+.feedback { border-left: 4px solid var(--blue); }
+.feedback.tone-good { border-left-color: var(--good); }
+.feedback.tone-bad { border-left-color: var(--bad); }
+.feedback.tone-good h3 { color: var(--good); }
+.feedback.tone-bad h3 { color: #ff8a78; }
+.theme-info p { margin: 4px 0; }
+.theme-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 6px; margin: 6px 0; }
+.theme-grid button { display: flex; flex-direction: column; align-items: flex-start; text-align: left; padding: 8px 10px; }
+.theme-grid button small { color: var(--muted); font-size: 0.72rem; }
+.theme-grid button.on small { color: #e6f3d8; }
+.theme-grid .star { color: var(--warn); }
+.theme-grid button.review { background: #5a3d1e; }
+button.small-primary { font-size: 0.95rem; padding: 8px 14px; box-shadow: 0 3px 0 var(--accent-dark); }
+@media (max-width: 420px) { .tabs button { padding: 7px 8px; font-size: 0.85rem; } }
