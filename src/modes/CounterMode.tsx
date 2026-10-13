@@ -6,7 +6,7 @@ import Board from '../components/Board';
 import AdviceCard from '../components/AdviceCard';
 import HintCard from '../components/HintCard';
 import QuizCard from '../components/QuizCard';
-import { getQuizMode, shouldQuiz } from '../lib/quiz';
+import { getQuizMode, getSimple, shouldQuiz } from '../lib/quiz';
 import CoachCard from '../components/CoachCard';
 import MoveList from '../components/MoveList';
 import {
@@ -15,6 +15,7 @@ import {
   explainQuizChoice,
   QUIZ_OPTS,
   reviewMove,
+  simplifyAnalysis,
   tacticalHint,
   type Advice,
   type BoardArrow,
@@ -88,10 +89,11 @@ export default function CounterMode({ active = true }: { active?: boolean }) {
     setBusy(true);
     setErr(null);
     try {
+      const simple = getSimple();
       if (getQuizMode() === 'hint') {
-        const ha = await engine.analyze(f, COACH_OPTS);
+        const ha = await engine.analyze(f, simple ? QUIZ_OPTS : COACH_OPTS);
         if (t !== token.current) return;
-        const h = tacticalHint(f, ha);
+        const h = tacticalHint(f, ha, { simple });
         if (h) {
           setHint({ hint: h, fen: f, context });
           return;
@@ -100,15 +102,15 @@ export default function CounterMode({ active = true }: { active?: boolean }) {
       if (shouldQuiz(getQuizMode())) {
         const qa = await engine.analyze(f, QUIZ_OPTS);
         if (t !== token.current) return;
-        const q = buildQuiz(f, qa);
+        const q = buildQuiz(f, qa, undefined, { simple });
         if (q) {
-          setQuiz({ quiz: q, analysis: qa, context, picked: null });
+          setQuiz({ quiz: q, analysis: simple ? simplifyAnalysis(f, qa).analysis : qa, context, picked: null });
           return;
         }
       }
-      const a = await engine.analyze(f, COACH_OPTS);
+      const a = await engine.analyze(f, simple ? QUIZ_OPTS : COACH_OPTS);
       if (t !== token.current) return;
-      const adv = advise(f, a);
+      const adv = advise(f, a, { simple });
       setAdvice(adv ? { advice: adv, context, fen: f } : null);
     } catch (e) {
       if (t === token.current) setErr((e as Error).message);
@@ -150,7 +152,9 @@ export default function CounterMode({ active = true }: { active?: boolean }) {
       setBusy(true);
       void (async () => {
         try {
-          const before = await engine.analyze(fenBefore, COACH_OPTS);
+          const simple = getSimple();
+          const rawBefore = await engine.analyze(fenBefore, simple ? QUIZ_OPTS : COACH_OPTS);
+          const before = simple ? simplifyAnalysis(fenBefore, rawBefore).analysis : rawBefore;
           const after = c.isGameOver() ? null : await engine.analyze(c.fen(), AFTER_OPTS);
           if (t !== token.current) return;
           setReview(reviewMove(fenBefore, { from: m.from, to: m.to, promotion: m.promotion }, before, after));

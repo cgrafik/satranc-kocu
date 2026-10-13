@@ -408,6 +408,8 @@ export function explainThreat(fen: string, passed: Analysis | null, current: Ana
 // "Ne oynamalıyım?" / "Rakip bunu yaparsa ne yapmalıyım?" — doğrudan öneri.
 export interface Advice {
   uci: string;
+  /** Basit öneri motorun 1. tercihinden farklıysa: motorun en güçlü (ileri düzey) hamlesi. */
+  advanced?: string;
   /** "Atını g1'den f3'e götür" */
   text: string;
   reasons: string[];
@@ -454,7 +456,9 @@ function whyGood(fen: string, line: PvLine, me: Color): string[] {
   return out;
 }
 
-export function advise(fen: string, analysis: Analysis): Advice | null {
+export function advise(fen: string, raw: Analysis, opts: { simple?: boolean } = {}): Advice | null {
+  const simplified = opts.simple ? simplifyAnalysis(fen, raw) : null;
+  const analysis = simplified?.analysis ?? raw;
   const line = analysis.lines[0];
   if (!line || line.pv.length === 0) return null;
   const me = new Chess(fen).turn();
@@ -480,6 +484,7 @@ export function advise(fen: string, analysis: Analysis): Advice | null {
     reply,
     alternatives,
     arrows: [{ from: bm.move.from, to: bm.move.to, color: 'green' }],
+    advanced: simplified?.advanced,
   };
 }
 
@@ -513,7 +518,8 @@ const qualityOf = (diff: number) =>
  * En iyi hamle + biri biraz zayıf + biri belirgin şekilde zayıf üç seçenek üretir.
  * Seçenekler yeterince farklı değilse (hepsi neredeyse eşit) null döner; o zaman normal öneri gösterilir.
  */
-export function buildQuiz(fen: string, analysis: Analysis, rng: () => number = Math.random): Quiz | null {
+export function buildQuiz(fen: string, raw: Analysis, rng: () => number = Math.random, opts: { simple?: boolean } = {}): Quiz | null {
+  const analysis = opts.simple ? simplifyAnalysis(fen, raw).analysis : raw;
   const lines = analysis.lines.filter((l) => l.pv.length > 0);
   if (lines.length < 3) return null;
   const bestWin = winPercent(lines[0].score);
@@ -589,11 +595,12 @@ const MOTIF_DETAIL: Record<Exclude<HintMotif, 'mate' | 'quiet'>, string> = {
   check: 'Şah çeken hamleleri dene; rakip önce şahını kurtarmak zorunda kalır.',
 };
 
-export function tacticalHint(fen: string, analysis: Analysis): TacticalHint | null {
+export function tacticalHint(fen: string, raw: Analysis, opts: { simple?: boolean } = {}): TacticalHint | null {
+  const analysis = opts.simple ? simplifyAnalysis(fen, raw).analysis : raw;
   const line = analysis.lines[0];
   if (!line || line.pv.length === 0) return null;
   const me = new Chess(fen).turn();
-  const reveal = advise(fen, analysis);
+  const reveal = advise(fen, raw, opts);
   const make = (motif: HintMotif, text: string, detail?: string): TacticalHint => ({
     motif,
     text,
@@ -608,7 +615,8 @@ export function tacticalHint(fen: string, analysis: Analysis): TacticalHint | nu
 
   // Kendi hamlelerim: devamın 1. ve 3. yarım hamlesi (iki hamlelik kombinasyonları da yakalamak için)
   const board = new Chess(fen);
-  for (let k = 0; k < Math.min(line.pv.length, 3); k++) {
+  // Yeni başlayan için yalnızca tek hamlelik taktikler; iki hamlelik kombinasyonlara bakma
+  for (let k = 0; k < Math.min(line.pv.length, opts.simple ? 1 : 3); k++) {
     const u = line.pv[k];
     const before = new Chess(board.fen());
     let m: Move;
@@ -654,4 +662,69 @@ export function tacticalHint(fen: string, analysis: Analysis): TacticalHint | nu
         ? 'Henüz oyuna girmemiş bir taşın var; onu geliştirmeyi düşün.'
         : 'En az çalışan taşını daha iyi bir kareye taşımayı düşün.';
   return make('quiet', 'Şu an belirgin bir taktik yok.', detail);
+}
+// ---------------------------------------------------------------------------
+// Yeni başlayan (≈300–600) için basit öneri: en iyiye çok yakın hamleler arasından EN ANLAŞILIR olanı.
+// Öneri her zaman koçun kendi ölçüsüyle en az "İyi hamle"dir (kayıp ≤ THRESHOLDS.good); rastgelelik yok.
+export const SIMPLE_MAX_LOSS = THRESHOLDS.good;
+
+/** Bir hamlenin yeni başlayan için ne kadar anlaşılır olduğu (yüksek = daha anlaşılır). */
+export function simplicityScore(fen: string, line: PvLine): number {
+  const res = moveOf(fen, line.pv[0]);
+  if (!res) return -999;
+  const { chess: after, move } = res;
+  const before = new Chess(fen);
+  const me = before.turn();
+  const moveNo = Number(fen.split(' ')[5] ?? 1);
+  const castle = move.isKingsideCastle() || move.isQueensideCastle();
+  let s = 0;
+  if (line.score.type === 'mate' && line.score.value === 1) s += 100;
+  // Hemen görülen kazanç: benim hamlem + rakibin cevabı
+  const gainNow = lineMaterialSwing(fen, line.pv.slice(0, 2), me, 2).swing;
+  const gainDeep = lineMaterialSwing(fen, line.pv, me, 6).swing;
+  if (move.captured && gainNow >= 2) s += 50;
+  else if (move.captured && gainNow >= 0) s += 10;
+  const hBefore = hangingPieces(before, me);
+  const hAfter = hangingPieces(after, me);
+  if (hBefore.some((h) => h.square === move.from) && !hAfter.some((h) => h.square === move.to)) s += 40;
+  else if (hAfter.length < hBefore.length) s += 30;
+  if (castle) s += 25;
+  if (moveNo <= 12 && (move.piece === 'n' || move.piece === 'b') && move.from[1] === (me === 'w' ? '1' : '8')) s += 20;
+  if (moveNo <= 10 && move.piece === 'p' && 'de'.includes(move.to[0])) s += 15;
+  if (after.inCheck()) s += 3;
+  // Cezalar: anlaşılması zor ya da riskli görünen hamleler
+  if (hAfter.some((h) => h.square === move.to)) s -= 30; // taşı korumasız kareye (feda)
+  if (gainDeep >= 2 && gainNow < 2) s -= 20; // kazanç ancak uzun hesapla görülüyor
+  if (move.piece === 'k' && !castle) s -= 15;
+  if (move.piece === 'q' && moveNo <= 8) s -= 10;
+  if (move.piece === 'p' && 'abgh'.includes(move.to[0])) s -= 5;
+  return s;
+}
+
+/**
+ * Analizi yeni başlayan için yeniden sıralar: seçilen basit hamle başa gelir,
+ * ondan daha güçlü (ileri düzey) hamleler listeden çıkar. Seçim değiştiyse advanced = motorun 1. tercihi.
+ */
+export function simplifyAnalysis(fen: string, analysis: Analysis): { analysis: Analysis; advanced?: string } {
+  const lines = analysis.lines.filter((l) => l.pv.length > 0);
+  if (lines.length < 2) return { analysis };
+  const bestWin = winPercent(lines[0].score);
+  let pick = 0;
+  let pickScore = -Infinity;
+  lines.forEach((l, i) => {
+    const diff = Math.max(0, bestWin - winPercent(l.score));
+    if (diff > SIMPLE_MAX_LOSS) return;
+    // Anlaşılırlık önce; eşitlikte daha güçlü hamle (her kazanma yüzdesi 2 puan)
+    const score = simplicityScore(fen, l) - diff * 2;
+    if (score > pickScore) {
+      pickScore = score;
+      pick = i;
+    }
+  });
+  if (pick === 0) return { analysis };
+  const adv = moveOf(fen, lines[0].pv[0]);
+  return {
+    analysis: { ...analysis, lines: [lines[pick], ...lines.slice(pick + 1)], bestMove: lines[pick].pv[0] },
+    advanced: adv ? describeMoveObj(adv.move, 'imp') : undefined,
+  };
 }

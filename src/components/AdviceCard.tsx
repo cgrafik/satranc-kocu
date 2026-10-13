@@ -34,6 +34,14 @@ export default function AdviceCard({
           <span className="muted">Rakibin muhtemel cevabı:</span> {sentence(advice.reply)}
         </p>
       )}
+      {advice.advanced && (
+        <details className="small">
+          <summary>Seviyene uygun, anlaşılır bir hamle seçtim. Motorun en güçlüsü?</summary>
+          <p>
+            {sentence(advice.advanced)} <span className="muted">(ileri düzey: neden iyi olduğunu görmek uzun hesap ister)</span>
+          </p>
+        </details>
+      )}
       {advice.alternatives.length > 0 && (
         <details className="small">
           <summary>Başka seçenekler</summary>

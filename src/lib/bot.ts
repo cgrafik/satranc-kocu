@@ -5,7 +5,7 @@ import { Chess } from 'chess.js';
 import type { Analysis, AnalyzeOptions } from './engine';
 import { scoreToNumber } from './evaluation';
 
-export type LevelId = 'baslangic' | 'kolay' | 'orta' | 'ileri' | 'usta';
+export type LevelId = 'acemi' | 'baslangic' | 'kolay' | 'orta' | 'ileri' | 'usta';
 
 export interface BotLevel {
   id: LevelId;
@@ -23,6 +23,7 @@ export interface BotLevel {
 }
 
 export const LEVELS: BotLevel[] = [
+  { id: 'acemi', name: 'Acemi', approx: '≈ 250', depth: 1, multipv: 10, temperature: 400, randomRate: 0.25, seesMateInOne: false },
   { id: 'baslangic', name: 'Başlangıç', approx: '≈ 400', depth: 3, multipv: 8, temperature: 260, randomRate: 0.12, seesMateInOne: false },
   { id: 'kolay', name: 'Kolay', approx: '≈ 600', depth: 4, multipv: 7, temperature: 170, randomRate: 0.07, seesMateInOne: false },
   { id: 'orta', name: 'Orta', approx: '≈ 800', depth: 5, multipv: 6, temperature: 115, randomRate: 0.04, seesMateInOne: true },

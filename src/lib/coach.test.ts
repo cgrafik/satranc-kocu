@@ -1,7 +1,20 @@
 // Koç: gerçek motorla 400–900 seviyesinin tipik hata senaryoları.
 import { afterAll, describe, expect, it } from 'vitest';
 import { Chess } from 'chess.js';
-import { advise, buildQuiz, classify, explainQuizChoice, explainThreat, QUIZ_OPTS, reviewMove, tacticalHint } from './coach';
+import {
+  advise,
+  buildQuiz,
+  classify,
+  explainQuizChoice,
+  explainThreat,
+  QUIZ_OPTS,
+  reviewMove,
+  SIMPLE_MAX_LOSS,
+  simplifyAnalysis,
+  tacticalHint,
+} from './coach';
+import type { Analysis } from './engine';
+import { winPercent } from './evaluation';
 import { seededRng } from './bot';
 import { createNodeEngine } from '../test/nodeEngine';
 import { passTurnFen } from './tactics';
@@ -199,4 +212,56 @@ describe('sadece ipucu (gerçek motor)', () => {
     const a = await engine.analyze(fen, { depth: 12, multipv: 3 });
     for (let i = 0; i < 20; i++) expect(tacticalHint(fen, a)!.reveal!.uci).toBe(a.lines[0].pv[0]);
   }, 60000);
+});
+describe('yeni başlayan için basit öneri', () => {
+  const fake = (fen: string, lines: [string, number][]): Analysis => ({
+    fen,
+    bestMove: lines[0][0],
+    depth: 12,
+    partial: false,
+    lines: lines.map(([u, cp], i) => ({ multipv: i + 1, depth: 12, score: { type: 'cp', value: cp }, pv: [u] })),
+  });
+  const START = 'rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1';
+
+  it('neredeyse eşit hamlelerden anlaşılır olanı seçer (kenar piyonu yerine merkez)', () => {
+    const a = fake(START, [['a2a4', 40], ['e2e4', 35], ['h2h4', 30]]);
+    const s = simplifyAnalysis(START, a);
+    expect(s.analysis.lines[0].pv[0]).toBe('e2e4');
+    expect(s.advanced).toBe("Piyonunu a2'den a4'e sür");
+    expect(advise(START, a, { simple: true })!.text).toBe("Piyonunu e2'den e4'e sür");
+  });
+
+  it('bedava taşı almayı sessiz bir hamleye tercih eder', () => {
+    const fen = '4k3/8/8/4n3/8/5N2/PP6/4K3 w - - 0 1';
+    const a = fake(fen, [['a2a3', 420], ['f3e5', 400]]);
+    expect(simplifyAnalysis(fen, a).analysis.lines[0].pv[0]).toBe('f3e5');
+  });
+
+  it('en iyiye göre kayıp sınırı aşan hamleyi ASLA önermez', () => {
+    const a = fake(START, [['a2a4', 60], ['e2e4', -200]]);
+    expect(winPercent({ type: 'cp', value: 60 }) - winPercent({ type: 'cp', value: -200 })).toBeGreaterThan(SIMPLE_MAX_LOSS);
+    expect(simplifyAnalysis(START, a).analysis.lines[0].pv[0]).toBe('a2a4');
+    expect(simplifyAnalysis(START, a).advanced).toBeUndefined();
+  });
+
+  it('daha güçlü (ileri düzey) hamleler basit sorunun çeldiricisi olmaz', () => {
+    const a = fake(START, [['a2a4', 40], ['e2e4', 35], ['g2g4', -150], ['f2f3', -300]]);
+    const s = simplifyAnalysis(START, a).analysis;
+    expect(s.lines.map((l) => l.pv[0])).toEqual(['e2e4', 'g2g4', 'f2f3']);
+  });
+
+  it('gerçek motorla: önerilen basit hamle koçun ölçüsüyle en az "İyi hamle"', async () => {
+    for (const fen of [
+      'r1bqkbnr/pppp1ppp/2n5/4p3/4P3/5N2/PPPP1PPP/RNBQKB1R w KQkq - 2 3',
+      'r1bqkb1r/pppp1ppp/2n2n2/4p3/2B1P3/5N2/PPPP1PPP/RNBQK2R w KQkq - 4 4',
+    ]) {
+      const a = await engine.analyze(fen, QUIZ_OPTS);
+      const adv = advise(fen, a, { simple: true })!;
+      const c = new Chess(fen);
+      c.move({ from: adv.uci.slice(0, 2), to: adv.uci.slice(2, 4), promotion: adv.uci[4] });
+      const after = await engine.analyze(c.fen(), { depth: 12 });
+      const r = reviewMove(fen, { from: adv.uci.slice(0, 2), to: adv.uci.slice(2, 4) }, a, after);
+      expect(['best', 'excellent', 'good'], `${fen} → ${adv.text}`).toContain(r.cls);
+    }
+  }, 120000);
 });

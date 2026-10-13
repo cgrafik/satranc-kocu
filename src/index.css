@@ -92,7 +92,7 @@ code.fen { word-break: break-all; font-size: 0.75rem; }
 .field > span, .field > label { font-weight: 600; }
 .seg { display: flex; gap: 4px; flex-wrap: wrap; align-items: center; }
 .seg button { flex: 1; }
-.levels { display: grid; grid-template-columns: repeat(5, 1fr); gap: 4px; }
+.levels { display: grid; grid-template-columns: repeat(3, 1fr); gap: 4px; }
 .levels button { display: flex; flex-direction: column; align-items: center; padding: 8px 2px; }
 .levels small { color: var(--muted); font-size: 0.72rem; }
 .levels button.on small { color: #e6f3d8; }

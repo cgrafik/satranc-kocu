@@ -10,7 +10,7 @@ import CoachCard from '../components/CoachCard';
 import AdviceCard from '../components/AdviceCard';
 import HintCard from '../components/HintCard';
 import QuizCard from '../components/QuizCard';
-import { QUIZ_MODE_KEY, shouldQuiz, type QuizMode } from '../lib/quiz';
+import { QUIZ_MODE_KEY, SIMPLE_KEY, shouldQuiz, type QuizMode } from '../lib/quiz';
 import {
   advise,
   buildQuiz,
@@ -19,6 +19,7 @@ import {
   explainThreat,
   QUIZ_OPTS,
   reviewMove,
+  simplifyAnalysis,
   tacticalHint,
   type Advice,
   type BoardArrow,
@@ -136,6 +137,11 @@ export default function PlayMode({ active = true }: { active?: boolean }) {
   const [advice, setAdvice] = useState<Advice | null>(null);
   const [quiz, setQuiz] = useState<{ quiz: Quiz; analysis: Analysis; picked: QuizOption | null } | null>(null);
   const [hint, setHint] = useState<TacticalHint | null>(null);
+  const [simple, setSimple] = usePersistent<{ on: boolean }>(SIMPLE_KEY, { on: true });
+  const simpleRef = useRef(simple.on);
+  useEffect(() => {
+    simpleRef.current = simple.on;
+  }, [simple.on]);
   const [quizMode, setQuizMode] = usePersistent<{ mode: QuizMode }>(QUIZ_MODE_KEY, { mode: 'sometimes' });
   const [resultText, setResultText] = useState<string | null>(initial?.resultText ?? null);
   const [liveScore, setLiveScore] = useState<Score | null>(null);
@@ -258,7 +264,9 @@ export default function PlayMode({ active = true }: { active?: boolean }) {
     setBusy('review');
     let review: MoveReview | null = null;
     try {
-      const before = await engine.analyze(fenBefore, COACH_OPTS);
+      // Basit modda değerlendirme de seviyeye uygun basit hamleyi ölçü alır (çelişkili öneri olmasın)
+      const rawBefore = await engine.analyze(fenBefore, simpleRef.current ? QUIZ_OPTS : COACH_OPTS);
+      const before = simpleRef.current ? simplifyAnalysis(fenBefore, rawBefore).analysis : rawBefore;
       const after = chess.isGameOver() ? null : await engine.analyze(pm.fen, AFTER_OPTS);
       if (t !== token.current) return;
       review = reviewMove(fenBefore, { from: pm.from, to: pm.to, promotion: pm.uci[4] }, before, after, idx);
@@ -379,9 +387,9 @@ export default function PlayMode({ active = true }: { active?: boolean }) {
     try {
       const [p, cur] = await Promise.all([
         passed ? engine.analyze(passed, { depth: 12, movetime: 2500, timeoutMs: 6000 }) : Promise.resolve(null),
-        engine.analyze(fen, COACH_OPTS),
+        engine.analyze(fen, simple.on ? QUIZ_OPTS : COACH_OPTS),
       ]);
-      if (fenOf(movesRef.current) === fen) setThreat(explainThreat(fen, p, cur));
+      if (fenOf(movesRef.current) === fen) setThreat(explainThreat(fen, p, simple.on ? simplifyAnalysis(fen, cur).analysis : cur));
     } catch (e) {
       setEngineErr((e as Error).message);
     } finally {
@@ -404,21 +412,21 @@ export default function PlayMode({ active = true }: { active?: boolean }) {
     try {
       // Sadece ipucu: hamleyi söylemeden en iyi hamledeki taktik temayı anlatır
       if (quizMode.mode === 'hint') {
-        const a = await engine.analyze(fen, COACH_OPTS);
-        if (fenOf(movesRef.current) === fen) setHint(tacticalHint(fen, a));
+        const a = await engine.analyze(fen, simple.on ? QUIZ_OPTS : COACH_OPTS);
+        if (fenOf(movesRef.current) === fen) setHint(tacticalHint(fen, a, { simple: simple.on }));
         return;
       }
       // Bazen direkt söylemek yerine 3 seçenek sorar: kullanıcı en iyisini tahmin eder.
       if (shouldQuiz(quizMode.mode)) {
         const a = await engine.analyze(fen, QUIZ_OPTS);
         if (fenOf(movesRef.current) !== fen) return;
-        const q = buildQuiz(fen, a);
-        if (q) setQuiz({ quiz: q, analysis: a, picked: null });
-        else setAdvice(advise(fen, a));
+        const q = buildQuiz(fen, a, undefined, { simple: simple.on });
+        if (q) setQuiz({ quiz: q, analysis: simple.on ? simplifyAnalysis(fen, a).analysis : a, picked: null });
+        else setAdvice(advise(fen, a, { simple: simple.on }));
         return;
       }
-      const a = await engine.analyze(fen, COACH_OPTS);
-      if (fenOf(movesRef.current) === fen) setAdvice(advise(fen, a));
+      const a = await engine.analyze(fen, simple.on ? QUIZ_OPTS : COACH_OPTS);
+      if (fenOf(movesRef.current) === fen) setAdvice(advise(fen, a, { simple: simple.on }));
     } catch (e) {
       setEngineErr((e as Error).message);
     } finally {
@@ -606,6 +614,13 @@ export default function PlayMode({ active = true }: { active?: boolean }) {
               <input type="checkbox" checked={setup.guard} onChange={(e) => setSetup({ ...setup, guard: e.target.checked })} />
               <span>
                 <strong>Hata koruması:</strong> Büyük hata yaparsam dur, geri almama izin ver.
+              </span>
+            </label>
+            <label className="check">
+              <input type="checkbox" checked={simple.on} onChange={(e) => setSimple({ on: e.target.checked })} />
+              <span>
+                <strong>Önerileri seviyeme göre basitleştir:</strong> Koç anlaşılır ve sağlam hamleler önersin, uzun kombinasyonlar değil (yeni
+                başlayanlar için).
               </span>
             </label>
             <label className="check">
@@ -830,6 +845,10 @@ export default function PlayMode({ active = true }: { active?: boolean }) {
                 <label className="check inline">
                   <input type="checkbox" checked={setup.showEval} onChange={(e) => setSetup({ ...setup, showEval: e.target.checked })} />
                   <span>Değerlendirme</span>
+                </label>
+                <label className="check inline">
+                  <input type="checkbox" checked={simple.on} onChange={(e) => setSimple({ on: e.target.checked })} />
+                  <span>Basit öneriler</span>
                 </label>
                 <select
                   aria-label="Tahmin soruları"

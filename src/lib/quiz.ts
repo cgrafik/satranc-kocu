@@ -18,3 +18,10 @@ export function shouldQuiz(mode: QuizMode, rng: () => number = Math.random): boo
 export function getQuizStats(): { right: number; total: number } {
   return loadLocal(QUIZ_STATS_KEY, { right: 0, total: 0 });
 }
+
+/** Önerileri yeni başlayan seviyesine göre basitleştir (varsayılan açık). */
+export const SIMPLE_KEY = 'sk.coach.simple';
+
+export function getSimple(): boolean {
+  return loadLocal<{ on: boolean }>(SIMPLE_KEY, { on: true }).on;
+}
