@@ -1,7 +1,7 @@
 // Koç: gerçek motorla 400–900 seviyesinin tipik hata senaryoları.
 import { afterAll, describe, expect, it } from 'vitest';
 import { Chess } from 'chess.js';
-import { advise, buildQuiz, classify, explainQuizChoice, explainThreat, QUIZ_OPTS, reviewMove } from './coach';
+import { advise, buildQuiz, classify, explainQuizChoice, explainThreat, QUIZ_OPTS, reviewMove, tacticalHint } from './coach';
 import { seededRng } from './bot';
 import { createNodeEngine } from '../test/nodeEngine';
 import { passTurnFen } from './tactics';
@@ -163,5 +163,40 @@ describe('tahmin sorusu (gerçek motor)', () => {
     const fen = '8/8/8/4k3/8/8/8/4K3 w - - 0 1';
     const a = await engine.analyze(fen, QUIZ_OPTS);
     expect(buildQuiz(fen, a)).toBeNull();
+  }, 60000);
+});
+describe('sadece ipucu (gerçek motor)', () => {
+  // İpucu hamleyi, kare adını ya da notasyonu ele vermemeli
+  const leaks = (s: string) => /[a-h][1-8]|götür|\bsür\b|\bal\b|Atını|Filini|Kaleni|Vezirini/.test(s);
+
+  it('çatal fırsatını bölgesiyle söyler, hamleyi söylemez', async () => {
+    const fen = 'r3k3/8/4q3/3N4/8/8/8/6K1 w - - 0 1';
+    const h = tacticalHint(fen, await engine.analyze(fen, { depth: 12, multipv: 3 }))!;
+    expect(h.motif).toBe('fork');
+    expect(h.text).toBe('Merkezde bir çatal fırsatı var, taşların dizilimine dikkat et.');
+    expect(leaks(h.text + h.detail)).toBe(false);
+    expect(h.reveal?.uci).toBe('d5c7');
+  }, 60000);
+
+  it('mat fırsatı', async () => {
+    const fen = '6k1/5ppp/8/8/8/8/5PPP/3R2K1 w - - 0 1';
+    const h = tacticalHint(fen, await engine.analyze(fen, { depth: 10, multipv: 3 }))!;
+    expect(h.motif).toBe('mate');
+    expect(h.text).toBe('Tek hamlede mat var!');
+    expect(leaks(h.text + h.detail)).toBe(false);
+  }, 60000);
+
+  it('korumasız taş', async () => {
+    const fen = '4k3/8/8/4n3/8/5N2/PP6/4K3 w - - 0 1';
+    const h = tacticalHint(fen, await engine.analyze(fen, { depth: 10, multipv: 3 }))!;
+    expect(h.motif).toBe('freePiece');
+    expect(h.text).toBe('Merkezde korumasız bir rakip taş var.');
+    expect(leaks(h.text + h.detail)).toBe(false);
+  }, 60000);
+
+  it('ipucu her zaman motorun EN İYİ hamlesine dayanır', async () => {
+    const fen = 'rnbqkbnr/pppp1ppp/8/4p3/4P3/5N2/PPPP1PPP/RNBQKB1R b KQkq - 1 2';
+    const a = await engine.analyze(fen, { depth: 12, multipv: 3 });
+    for (let i = 0; i < 20; i++) expect(tacticalHint(fen, a)!.reveal!.uci).toBe(a.lines[0].pv[0]);
   }, 60000);
 });

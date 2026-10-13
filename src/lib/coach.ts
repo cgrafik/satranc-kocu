@@ -4,7 +4,20 @@ import { Chess, type Color, type Move, type PieceSymbol, type Square } from 'che
 import type { Analysis } from './engine';
 import { scoreFor, winPercent, formatScore, describeScore, scoreToNumber } from './evaluation';
 import type { PvLine, Score } from './uci';
-import { describeFork, detectFork, hangingPieces, lineMaterialSwing, opposite, pieceForm, squareAt, squareLoc, toTurkishSan } from './tactics';
+import {
+  describeFork,
+  detectDiscovered,
+  detectFork,
+  detectLineTactic,
+  hangingPieces,
+  lineMaterialSwing,
+  opposite,
+  pieceForm,
+  regionOf,
+  squareAt,
+  squareLoc,
+  toTurkishSan,
+} from './tactics';
 import { cap, describeLine, describeMoveObj } from './describe';
 
 export type MoveClass = 'best' | 'excellent' | 'good' | 'inaccuracy' | 'mistake' | 'blunder' | 'missed';
@@ -550,4 +563,95 @@ export function explainQuizChoice(fen: string, analysis: Analysis, uci: string, 
     if (good) out.push(`En iyi hamlenin faydası: ${good.charAt(0).toLocaleLowerCase('tr-TR')}${good.slice(1)}`);
   }
   return out.map(tidy);
+}
+// ---------------------------------------------------------------------------
+// Sadece ipucu: hamleyi söylemeden, en iyi hamledeki taktik temayı üstü kapalı anlatır.
+export type HintMotif = 'mate' | 'fork' | 'discovered' | 'pin' | 'skewer' | 'freePiece' | 'defend' | 'material' | 'check' | 'quiet';
+
+export interface TacticalHint {
+  motif: HintMotif;
+  /** Kısa ipucu: "Şah kanadında bir çatal fırsatı var." */
+  text: string;
+  /** Nasıl aranır? */
+  detail: string;
+  /** Kullanıcı isterse açılacak gerçek cevap. */
+  reveal: Advice | null;
+}
+
+const MOTIF_DETAIL: Record<Exclude<HintMotif, 'mate' | 'quiet'>, string> = {
+  fork: 'Taşlarının gidebileceği karelerden iki rakip taşa birden saldırabilir misin? Rakibin şahı, veziri ve kalelerinin dizilimine dikkat et.',
+  discovered: 'Uzun menzilli bir taşının (fil, kale, vezir) önünde kendi taşın duruyor. O taşı tehditle oynatırsan arkadaki de saldırır.',
+  pin: 'Aynı çizgide duran iki rakip taşa bak: öndeki kıpırdarsa arkasındaki değerli taş açıkta kalır.',
+  skewer: 'Değerli bir rakip taş ile arkasındaki taş aynı çizgide. Öndekine saldırırsan kaçınca arkadaki düşer.',
+  freePiece: 'Rakibin taşlarını tek tek kontrol et: hangisini kimse korumuyor?',
+  defend: 'Önce kendi taşlarına bak: saldırı altında olan ve korunmayan var mı?',
+  material: 'Sırayla bak: şah çekişler, almalar, tehditler. Zorlayıcı hamlelerle başla.',
+  check: 'Şah çeken hamleleri dene; rakip önce şahını kurtarmak zorunda kalır.',
+};
+
+export function tacticalHint(fen: string, analysis: Analysis): TacticalHint | null {
+  const line = analysis.lines[0];
+  if (!line || line.pv.length === 0) return null;
+  const me = new Chess(fen).turn();
+  const reveal = advise(fen, analysis);
+  const make = (motif: HintMotif, text: string, detail?: string): TacticalHint => ({
+    motif,
+    text,
+    detail: detail ?? MOTIF_DETAIL[motif as keyof typeof MOTIF_DETAIL] ?? '',
+    reveal,
+  });
+
+  if (line.score.type === 'mate' && line.score.value > 0) {
+    const n = line.score.value;
+    return make('mate', n === 1 ? 'Tek hamlede mat var!' : `${n} hamlede mat var!`, 'Şah çeken bütün hamleleri tek tek dene; rakip şahın kaçabileceği kareleri say.');
+  }
+
+  // Kendi hamlelerim: devamın 1. ve 3. yarım hamlesi (iki hamlelik kombinasyonları da yakalamak için)
+  const board = new Chess(fen);
+  for (let k = 0; k < Math.min(line.pv.length, 3); k++) {
+    const u = line.pv[k];
+    const before = new Chess(board.fen());
+    let m: Move;
+    try {
+      m = board.move({ from: u.slice(0, 2), to: u.slice(2, 4), promotion: u[4] });
+    } catch {
+      break;
+    }
+    if (k === 1) continue; // rakibin cevabı
+    const pre = k === 2 ? 'İki hamlelik bir kombinasyonla ' : '';
+    const say = (s: string) => (pre ? pre + s.charAt(0).toLocaleLowerCase('tr-TR') + s.slice(1) : s);
+    const fork = detectFork(board, m.to as Square);
+    if (fork) {
+      const key = fork.targets.find((t) => t.type === 'k') ?? fork.targets[0];
+      return make('fork', say(`${cap(regionOf(key.square))} bir çatal fırsatı var, taşların dizilimine dikkat et.`));
+    }
+    const disc = detectDiscovered(before, board, m.to as Square);
+    if (disc) return make('discovered', say(`${cap(regionOf(disc.target.square))} bir açarak saldırı fırsatı var.`));
+    const lt = detectLineTactic(board, m.to as Square);
+    if (lt)
+      return make(
+        lt.kind,
+        say(`${cap(regionOf(lt.front.square))} bir ${lt.kind === 'pin' ? 'açmaz' : 'şiş'} fırsatı var; aynı çizgideki rakip taşlara bak.`),
+      );
+  }
+
+  const first = moveOf(fen, line.pv[0]);
+  if (!first) return null;
+  const m0 = first.move;
+  const gain = lineMaterialSwing(fen, line.pv, me, 6).swing;
+  const start = new Chess(fen);
+  if (m0.captured && start.attackers(m0.to as Square, opposite(me)).length === 0)
+    return make('freePiece', `${cap(regionOf(m0.to))} korumasız bir rakip taş var.`);
+  if (hangingPieces(start, me).some((h) => h.square === m0.from))
+    return make('defend', `${cap(regionOf(m0.from))} saldırı altında bir taşın var; önce onu düşün.`);
+  if (gain >= 2) return make('material', 'Malzeme kazandıran zorlayıcı bir hamle var.');
+  if (m0.san.includes('+')) return make('check', 'Şah çekmek işe yarayabilir.');
+  const moveNo = Number(fen.split(' ')[5] ?? 1);
+  const detail =
+    m0.isKingsideCastle() || m0.isQueensideCastle()
+      ? 'Şahını güvenceye almayı düşün.'
+      : moveNo <= 12 && (m0.piece === 'n' || m0.piece === 'b') && m0.from[1] === (me === 'w' ? '1' : '8')
+        ? 'Henüz oyuna girmemiş bir taşın var; onu geliştirmeyi düşün.'
+        : 'En az çalışan taşını daha iyi bir kareye taşımayı düşün.';
+  return make('quiet', 'Şu an belirgin bir taktik yok.', detail);
 }

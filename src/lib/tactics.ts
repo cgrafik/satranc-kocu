@@ -206,3 +206,83 @@ export function passTurnFen(fen: string): string | null {
     return null;
   }
 }
+
+// --- Çizgi taktikleri: açmaz, şiş, açarak saldırı ---
+const FILES = 'abcdefgh';
+const ROOK_DIRS = [[1, 0], [-1, 0], [0, 1], [0, -1]] as const;
+const BISHOP_DIRS = [[1, 1], [1, -1], [-1, 1], [-1, -1]] as const;
+const lineValue = (t: PieceSymbol) => (t === 'k' ? 100 : PIECE_VALUE[t]);
+
+function dirsOf(t: PieceSymbol) {
+  if (t === 'r') return ROOK_DIRS;
+  if (t === 'b') return BISHOP_DIRS;
+  if (t === 'q') return [...ROOK_DIRS, ...BISHOP_DIRS];
+  return [];
+}
+
+export interface LineTactic {
+  kind: 'pin' | 'skewer';
+  /** Saldıran uzun menzilli taş. */
+  square: Square;
+  front: PieceOnSquare;
+  back: PieceOnSquare;
+}
+
+/**
+ * square'deki fil/kale/vezirin bir çizgide iki rakip taşa dizilmiş saldırısı:
+ *  - açmaz: öndeki taş arkadakinden değersiz (arkadaki şah ya da daha değerli taş)
+ *  - şiş: öndeki taş (şah/vezir/kale) arkadakinden değerli; kaçınca arkadaki alınır
+ */
+export function detectLineTactic(chess: Chess, square: Square): LineTactic | null {
+  const piece = chess.get(square);
+  if (!piece) return null;
+  const f0 = FILES.indexOf(square[0]);
+  const r0 = Number(square[1]);
+  for (const [df, dr] of dirsOf(piece.type)) {
+    let front: PieceOnSquare | null = null;
+    for (let f = f0 + df, r = r0 + dr; f >= 0 && f < 8 && r >= 1 && r <= 8; f += df, r += dr) {
+      const sq = `${FILES[f]}${r}` as Square;
+      const p = chess.get(sq);
+      if (!p) continue;
+      if (p.color === piece.color) break;
+      if (!front) {
+        front = { square: sq, type: p.type, color: p.color };
+        continue;
+      }
+      const back = { square: sq, type: p.type, color: p.color };
+      const vf = lineValue(front.type);
+      const vb = lineValue(back.type);
+      if (front.type !== 'k' && vb > vf && vb >= 3) return { kind: 'pin', square, front, back };
+      if (vf > vb && vf >= 5 && vb >= 3) return { kind: 'skewer', square, front, back };
+      break;
+    }
+  }
+  return null;
+}
+
+export interface Discovered {
+  /** Önü açılan uzun menzilli taş. */
+  attacker: Square;
+  target: PieceOnSquare;
+}
+
+/** Hamle sonrası, oynamayan kendi fil/kale/vezirinin önü açılıp değerli bir rakip taşa saldırıyor mu? */
+export function detectDiscovered(before: Chess, after: Chess, movedTo: Square): Discovered | null {
+  const mover = after.get(movedTo)?.color;
+  if (!mover) return null;
+  for (const p of piecesOf(after, mover)) {
+    if (p.square === movedTo || !'rbq'.includes(p.type)) continue;
+    const was = new Set(attackedBy(before, p.square).map((t) => t.square));
+    const now = attackedBy(after, p.square).filter((t) => !was.has(t.square) && (t.type === 'k' || PIECE_VALUE[t.type] >= 3));
+    if (now.length) return { attacker: p.square, target: now.sort((a, b) => lineValue(b.type) - lineValue(a.type))[0] };
+  }
+  return null;
+}
+
+/** Karenin bulunduğu bölge: "şah kanadında", "vezir kanadında", "merkezde". */
+export function regionOf(sq: string): string {
+  const f = sq[0];
+  if ('abc'.includes(f)) return 'vezir kanadında';
+  if ('fgh'.includes(f)) return 'şah kanadında';
+  return 'merkezde';
+}

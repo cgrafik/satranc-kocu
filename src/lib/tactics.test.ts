@@ -2,7 +2,10 @@ import { describe, expect, it } from 'vitest';
 import { Chess } from 'chess.js';
 import {
   describeFork,
+  detectDiscovered,
   detectFork,
+  detectLineTactic,
+  regionOf,
   hangingPieces,
   lineMaterialSwing,
   passTurnFen,
@@ -86,5 +89,39 @@ describe('sırayı geçirme (tehdit analizi için)', () => {
   });
   it('şah altındayken null döner', () => {
     expect(passTurnFen('rnb1kbnr/pppp1ppp/8/4p3/6Pq/5P2/PPPPP2P/RNBQKBNR w KQkq - 1 3')).toBeNull();
+  });
+});
+
+describe('çizgi taktikleri', () => {
+  it('açmaz: fil, atı şaha karşı kıpırdatamaz hale getirir', () => {
+    const c = new Chess('4k3/8/2n5/1B6/8/8/8/4K3 b - - 0 1');
+    const t = detectLineTactic(c, 'b5')!;
+    expect(t).toMatchObject({ kind: 'pin', front: { square: 'c6', type: 'n' }, back: { square: 'e8', type: 'k' } });
+  });
+
+  it('şiş: kale önce şaha saldırır, arkadaki vezir düşer', () => {
+    const c = new Chess('q7/8/8/8/k7/8/8/R3K3 b - - 0 1');
+    expect(detectLineTactic(c, 'a1')).toMatchObject({ kind: 'skewer', front: { type: 'k' }, back: { type: 'q' } });
+  });
+
+  it('kendi taşı araya girerse çizgi taktiği yok', () => {
+    const c = new Chess('4k3/8/2n5/8/B7/8/8/4K3 w - - 0 1');
+    // a4-e8 köşegeninde b5 boş, c6 at, d7 boş → açmaz; araya beyaz piyon koyunca kalkar
+    expect(detectLineTactic(c, 'a4')?.kind).toBe('pin');
+    const blocked = new Chess('4k3/8/2n5/1P6/B7/8/8/4K3 w - - 0 1');
+    expect(detectLineTactic(blocked, 'a4')).toBeNull();
+  });
+
+  it('açarak saldırı: at çekilince kale vezire saldırır', () => {
+    const before = new Chess('4q1k1/8/8/8/4N3/8/8/K3R3 w - - 0 1');
+    const after = new Chess(before.fen());
+    after.move({ from: 'e4', to: 'c5' });
+    expect(detectDiscovered(before, after, 'c5')).toMatchObject({ attacker: 'e1', target: { square: 'e8', type: 'q' } });
+  });
+
+  it('bölge adları', () => {
+    expect(regionOf('g7')).toBe('şah kanadında');
+    expect(regionOf('b4')).toBe('vezir kanadında');
+    expect(regionOf('e5')).toBe('merkezde');
   });
 });

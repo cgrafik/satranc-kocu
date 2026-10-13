@@ -8,6 +8,7 @@ import EvalGraph from '../components/EvalGraph';
 import MoveList from '../components/MoveList';
 import CoachCard from '../components/CoachCard';
 import AdviceCard from '../components/AdviceCard';
+import HintCard from '../components/HintCard';
 import QuizCard from '../components/QuizCard';
 import { QUIZ_MODE_KEY, shouldQuiz, type QuizMode } from '../lib/quiz';
 import {
@@ -18,12 +19,14 @@ import {
   explainThreat,
   QUIZ_OPTS,
   reviewMove,
+  tacticalHint,
   type Advice,
   type BoardArrow,
   type MoveClass,
   type MoveReview,
   type Quiz,
   type QuizOption,
+  type TacticalHint,
   type ThreatInfo,
 } from '../lib/coach';
 import type { Analysis } from '../lib/engine';
@@ -132,6 +135,7 @@ export default function PlayMode({ active = true }: { active?: boolean }) {
   const [threat, setThreat] = useState<ThreatInfo | null>(null);
   const [advice, setAdvice] = useState<Advice | null>(null);
   const [quiz, setQuiz] = useState<{ quiz: Quiz; analysis: Analysis; picked: QuizOption | null } | null>(null);
+  const [hint, setHint] = useState<TacticalHint | null>(null);
   const [quizMode, setQuizMode] = usePersistent<{ mode: QuizMode }>(QUIZ_MODE_KEY, { mode: 'sometimes' });
   const [resultText, setResultText] = useState<string | null>(initial?.resultText ?? null);
   const [liveScore, setLiveScore] = useState<Score | null>(null);
@@ -180,6 +184,7 @@ export default function PlayMode({ active = true }: { active?: boolean }) {
     setThreat(null);
     setAdvice(null);
     setQuiz(null);
+    setHint(null);
     setCompare(null);
   };
 
@@ -385,9 +390,10 @@ export default function PlayMode({ active = true }: { active?: boolean }) {
   };
 
   const showAdvice = async () => {
-    if (advice || quiz) {
+    if (advice || quiz || hint) {
       setAdvice(null);
       setQuiz(null);
+      setHint(null);
       return;
     }
     setThreat(null);
@@ -396,6 +402,12 @@ export default function PlayMode({ active = true }: { active?: boolean }) {
     const fen = liveFen;
     setBusy('advice');
     try {
+      // Sadece ipucu: hamleyi söylemeden en iyi hamledeki taktik temayı anlatır
+      if (quizMode.mode === 'hint') {
+        const a = await engine.analyze(fen, COACH_OPTS);
+        if (fenOf(movesRef.current) === fen) setHint(tacticalHint(fen, a));
+        return;
+      }
       // Bazen direkt söylemek yerine 3 seçenek sorar: kullanıcı en iyisini tahmin eder.
       if (shouldQuiz(quizMode.mode)) {
         const a = await engine.analyze(fen, QUIZ_OPTS);
@@ -608,6 +620,7 @@ export default function PlayMode({ active = true }: { active?: boolean }) {
                     ['off', 'Hep cevabı söyle'],
                     ['sometimes', 'Bazen 3 şık sor'],
                     ['always', 'Hep 3 şık sor'],
+                    ['hint', 'Sadece ipucu ver'],
                   ] as const
                 ).map(([m, label]) => (
                   <button key={m} className={quizMode.mode === m ? 'on' : ''} onClick={() => setQuizMode({ mode: m })}>
@@ -658,7 +671,7 @@ export default function PlayMode({ active = true }: { active?: boolean }) {
         {phase !== 'setup' && (
           <>
             <div className="actions">
-              <button onClick={showAdvice} className={advice || quiz ? 'on' : ''} disabled={phase !== 'playing' || !isMyTurn || busy === 'bot' || busy === 'review'}>
+              <button onClick={showAdvice} className={advice || quiz || hint ? 'on' : ''} disabled={phase !== 'playing' || !isMyTurn || busy === 'bot' || busy === 'review'}>
                 👉 Ne oynamalıyım?
               </button>
               <button onClick={showThreat} className={threat ? 'on' : ''} disabled={phase !== 'playing' || busy === 'bot' || busy === 'review'}>
@@ -685,6 +698,17 @@ export default function PlayMode({ active = true }: { active?: boolean }) {
                   </button>
                 </div>
               </section>
+            )}
+
+            {hint && (
+              <HintCard
+                hint={hint}
+                onReveal={() => {
+                  setAdvice(hint.reveal);
+                  setHint(null);
+                }}
+                onClose={() => setHint(null)}
+              />
             )}
 
             {quiz && (
@@ -761,7 +785,7 @@ export default function PlayMode({ active = true }: { active?: boolean }) {
               </section>
             )}
 
-            {review && !advice && !threat && !quiz && (
+            {review && !advice && !threat && !quiz && !hint && (
               <CoachCard
                 review={review}
                 compare={compare}
@@ -815,6 +839,7 @@ export default function PlayMode({ active = true }: { active?: boolean }) {
                   <option value="off">Hep cevabı söyle</option>
                   <option value="sometimes">Bazen 3 şık sor</option>
                   <option value="always">Hep 3 şık sor</option>
+                  <option value="hint">Sadece ipucu ver</option>
                 </select>
                 <button
                   onClick={() => {

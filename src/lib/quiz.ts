@@ -1,7 +1,8 @@
 // Tahmin sorusu ayarları ve skoru (yalnızca bu tarayıcıda).
 import { loadLocal } from './usePersistent';
 
-export type QuizMode = 'off' | 'sometimes' | 'always';
+/** off: hep cevabı söyle · sometimes/always: 3 şıklı soru · hint: sadece taktik ipucu, hamleyi söyleme */
+export type QuizMode = 'off' | 'sometimes' | 'always' | 'hint';
 export const QUIZ_MODE_KEY = 'sk.quiz.mode';
 export const QUIZ_STATS_KEY = 'sk.quiz.stats';
 

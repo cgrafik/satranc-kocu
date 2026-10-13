@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from 'react';
 import { Chess } from 'chess.js';
 import Board from '../components/Board';
 import AdviceCard from '../components/AdviceCard';
+import HintCard from '../components/HintCard';
 import QuizCard from '../components/QuizCard';
 import { getQuizMode, shouldQuiz } from '../lib/quiz';
 import CoachCard from '../components/CoachCard';
@@ -14,11 +15,13 @@ import {
   explainQuizChoice,
   QUIZ_OPTS,
   reviewMove,
+  tacticalHint,
   type Advice,
   type BoardArrow,
   type MoveReview,
   type Quiz,
   type QuizOption,
+  type TacticalHint,
 } from '../lib/coach';
 import type { Analysis } from '../lib/engine';
 import { describeMoveObj, sentence } from '../lib/describe';
@@ -53,6 +56,7 @@ export default function CounterMode({ active = true }: { active?: boolean }) {
   const [st, setSt] = useState<CounterState>(() => loadLocal<CounterState>(KEY, { myColor: 'w', startFen: START, moves: [] }));
   const [advice, setAdvice] = useState<{ advice: Advice; context?: string; fen: string } | null>(null);
   const [quiz, setQuiz] = useState<{ quiz: Quiz; analysis: Analysis; context?: string; picked: QuizOption | null } | null>(null);
+  const [hint, setHint] = useState<{ hint: TacticalHint; fen: string; context?: string } | null>(null);
   const [oppBest, setOppBest] = useState<{ text: string; uci: string; fen: string } | null>(null);
   const [review, setReview] = useState<MoveReview | null>(null);
   const [compare, setCompare] = useState<'before' | 'after' | null>(null);
@@ -72,6 +76,7 @@ export default function CounterMode({ active = true }: { active?: boolean }) {
     setSt((s) => ({ ...s, moves: [], ...next }));
     setAdvice(null);
     setQuiz(null);
+    setHint(null);
     setOppBest(null);
     setReview(null);
     setCompare(null);
@@ -83,6 +88,15 @@ export default function CounterMode({ active = true }: { active?: boolean }) {
     setBusy(true);
     setErr(null);
     try {
+      if (getQuizMode() === 'hint') {
+        const ha = await engine.analyze(f, COACH_OPTS);
+        if (t !== token.current) return;
+        const h = tacticalHint(f, ha);
+        if (h) {
+          setHint({ hint: h, fen: f, context });
+          return;
+        }
+      }
       if (shouldQuiz(getQuizMode())) {
         const qa = await engine.analyze(f, QUIZ_OPTS);
         if (t !== token.current) return;
@@ -124,6 +138,7 @@ export default function CounterMode({ active = true }: { active?: boolean }) {
     setCompare(null);
     setAdvice(null);
     setQuiz(null);
+    setHint(null);
     const fenBefore = fen;
     if (!mine) {
       // Rakip (kullanıcının oynadığı) hamleden sonra: en iyi cevabı söyle
@@ -172,6 +187,7 @@ export default function CounterMode({ active = true }: { active?: boolean }) {
     setSt((s) => ({ ...s, moves: s.moves.slice(0, -1) }));
     setAdvice(null);
     setQuiz(null);
+    setHint(null);
     setOppBest(null);
     setReview(null);
     setCompare(null);
@@ -272,7 +288,7 @@ export default function CounterMode({ active = true }: { active?: boolean }) {
           </div>
           <div className="actions">
             <button
-              onClick={() => (advice || quiz ? (setAdvice(null), setQuiz(null)) : computeAdvice(fen))}
+              onClick={() => (advice || quiz || hint ? (setAdvice(null), setQuiz(null), setHint(null)) : computeAdvice(fen))}
               disabled={!myTurn || over || busy}
             >
               👉 Ne oynamalıyım?
@@ -296,6 +312,19 @@ export default function CounterMode({ active = true }: { active?: boolean }) {
               Rakip adına bunu oyna
             </button>
           </section>
+        )}
+
+        {hint && hint.fen === fen && (
+          <>
+            {hint.context && <p className="advice-context">{hint.context}</p>}
+            <HintCard
+              hint={hint.hint}
+              onReveal={() => {
+                if (hint.hint.reveal) setAdvice({ advice: hint.hint.reveal, context: hint.context, fen: hint.fen });
+                setHint(null);
+              }}
+            />
+          </>
         )}
 
         {quiz && quiz.quiz.fen === fen && (
